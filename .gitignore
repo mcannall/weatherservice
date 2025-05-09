@@ -79,3 +79,6 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# BFG Repo Cleaner
+*.jar
