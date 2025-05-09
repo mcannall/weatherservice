@@ -64,6 +64,11 @@ public class WeatherService
                 throw new WeatherServiceException("Weather service is not properly configured: Missing API key");
             }
 
+            // Log API key prefix and URL for debugging
+            _logger.LogInformation("Using API key starting with: {ApiKeyPrefix}", apiKey.Substring(0, Math.Min(4, apiKey.Length)));
+            var requestUrl = $"{baseUrl}/weather?zip={zipCode},us&appid={apiKey}&units=metric";
+            _logger.LogInformation("Making request to URL: {RequestUrl}", requestUrl.Replace(apiKey, "REDACTED"));
+
             if (string.IsNullOrEmpty(baseUrl))
             {
                 _logger.LogError("OpenWeatherMap base URL is missing in configuration");
