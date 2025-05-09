@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app: weatherservice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: weatherservice
+  template:
+    metadata:
+      labels:
+        app: weatherservice
+    spec:
+      containers:
+      - name: api
+        image: ghcr.io/mcannall/weatherservice:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          value: "Development"
+        - name: OpenWeatherMap__ApiKey
+          valueFrom:
+            secretKeyRef:
+              name: weatherservice-secrets
+              key: OPENWEATHERMAP_API_KEY
+        - name: OpenWeatherMap__BaseUrl
+          value: "https://api.openweathermap.org/data/2.5" 
