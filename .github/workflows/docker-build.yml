@@ -1,0 +1,193 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write  # Needed for GitHub Container Registry
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for version bumping
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Debug Environment
+      run: |
+        echo "GitHub Repository: ${{ github.repository }}"
+        echo "GitHub Actor: ${{ github.actor }}"
+        echo "GitHub Ref: ${{ github.ref }}"
+        echo "GitHub Event Name: ${{ github.event_name }}"
+
+    - name: Get current version
+      id: get_version
+      run: |
+        VERSION=$(grep -oP '<Version>\K[^<]+' api/api.csproj)
+        echo "CURRENT_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "current_version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Found version: $VERSION"
+
+    - name: Validate version format
+      run: |
+        if ! [[ ${{ env.CURRENT_VERSION }} =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Error: Version format must be X.Y.Z (e.g., 1.0.0)"
+          exit 1
+        fi
+        echo "Version format is valid"
+
+    - name: Bump version based on commit message
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      id: bump_version
+      run: |
+        # Get the last commit message
+        COMMIT_MSG=$(git log -1 --pretty=%B)
+        echo "Commit message: $COMMIT_MSG"
+        
+        # Parse current version
+        IFS='.' read -r major minor patch <<< "${{ env.CURRENT_VERSION }}"
+        echo "Current version parts - Major: $major, Minor: $minor, Patch: $patch"
+        
+        # Determine version bump based on commit message
+        if [[ $COMMIT_MSG == *"#major"* ]]; then
+          major=$((major + 1))
+          minor=0
+          patch=0
+          echo "Bumping major version"
+        elif [[ $COMMIT_MSG == *"#minor"* ]]; then
+          minor=$((minor + 1))
+          patch=0
+          echo "Bumping minor version"
+        elif [[ $COMMIT_MSG == *"#patch"* ]]; then
+          patch=$((patch + 1))
+          echo "Bumping patch version"
+        else
+          # No version bump needed
+          echo "NEW_VERSION=${{ env.CURRENT_VERSION }}" >> $GITHUB_ENV
+          echo "new_version=${{ env.CURRENT_VERSION }}" >> $GITHUB_OUTPUT
+          echo "No version bump needed"
+          exit 0
+        fi
+        
+        NEW_VERSION="$major.$minor.$patch"
+        echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "New version will be: $NEW_VERSION"
+        
+        # Update version in project file
+        sed -i "s/<Version>${{ env.CURRENT_VERSION }}<\/Version>/<Version>$NEW_VERSION<\/Version>/" api/api.csproj
+        echo "Updated version in api.csproj"
+        
+        # Configure git
+        git config --global user.name 'GitHub Actions'
+        git config --global user.email 'github-actions@github.com'
+        
+        # Commit and push version update
+        git add api/api.csproj
+        git commit -m "Bump version to $NEW_VERSION [skip ci]"
+        git push
+        echo "Pushed version update to repository"
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Create appsettings.json
+      run: |
+        cat > api/appsettings.json << EOF
+        {
+          "Logging": {
+            "LogLevel": {
+              "Default": "Information",
+              "Microsoft.AspNetCore": "Warning"
+            }
+          },
+          "AllowedHosts": "*",
+          "OpenWeatherMap": {
+            "BaseUrl": "https://api.openweathermap.org/data/2.5",
+            "ApiKey": "${{ secrets.OPENWEATHERMAP_API_KEY }}"
+          }
+        }
+        EOF
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./api
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.bump_version.outputs.new_version || steps.get_version.outputs.current_version }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ steps.bump_version.outputs.new_version || steps.get_version.outputs.current_version }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Test API endpoints
+      run: |
+        echo "Starting container..."
+        docker run -d -p 8080:80 --name weather-api ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        
+        echo "Container started. Checking container status..."
+        docker ps
+        docker logs weather-api
+        
+        echo "Waiting for API to be ready..."
+        for i in {1..30}; do
+          echo "Attempt $i to connect to API..."
+          if curl -s http://localhost:8080/ > /dev/null; then
+            echo "API is ready!"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "API failed to start within timeout"
+            echo "Container logs:"
+            docker logs weather-api
+            echo "Container status:"
+            docker ps -a
+            exit 1
+          fi
+          sleep 2
+        done
+        
+        echo "Testing root endpoint..."
+        ROOT_RESPONSE=$(curl -s http://localhost:8080/)
+        echo "Root endpoint response: $ROOT_RESPONSE"
+        if [[ $ROOT_RESPONSE != *"Welcome to Tom's weather forecasting api"* ]]; then
+          echo "Root endpoint test failed"
+          echo "Response: $ROOT_RESPONSE"
+          exit 1
+        fi
+        
+        echo "Testing weather endpoint..."
+        WEATHER_RESPONSE=$(curl -s http://localhost:8080/weather/48045)
+        echo "Weather endpoint response: $WEATHER_RESPONSE"
+        if [[ $WEATHER_RESPONSE != *"temperature"* ]]; then
+          echo "Weather endpoint test failed"
+          echo "Response: $WEATHER_RESPONSE"
+          exit 1
+        fi
+        
+        echo "All tests passed!"
+        
+        echo "Cleaning up..."
+        docker stop weather-api
+        docker rm weather-api
+        echo "Cleanup complete"
