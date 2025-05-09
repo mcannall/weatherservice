@@ -113,6 +113,7 @@ jobs:
 
     - name: Create appsettings.json
       run: |
+        echo "Creating appsettings.json with API key (first 4 chars): ${OPENWEATHERMAP_API_KEY:0:4}..."
         cat > api/appsettings.json << EOF
         {
           "Logging": {
@@ -128,6 +129,7 @@ jobs:
           }
         }
         EOF
+        echo "Created appsettings.json"
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
@@ -149,7 +151,8 @@ jobs:
         
         echo "Container started. Checking container status..."
         docker ps
-        docker logs weather-api
+        echo "Container logs (first 100 lines):"
+        docker logs weather-api | head -n 100
         
         echo "Waiting for API to be ready..."
         for i in {1..30}; do
@@ -179,11 +182,14 @@ jobs:
         fi
         
         echo "Testing weather endpoint..."
-        WEATHER_RESPONSE=$(curl -s http://localhost:8080/weather/48045)
+        echo "Making request to weather endpoint..."
+        WEATHER_RESPONSE=$(curl -v http://localhost:8080/weather/48045 2>&1)
         echo "Weather endpoint response: $WEATHER_RESPONSE"
         if [[ $WEATHER_RESPONSE != *"temperature"* ]]; then
           echo "Weather endpoint test failed"
-          echo "Response: $WEATHER_RESPONSE"
+          echo "Full response with headers: $WEATHER_RESPONSE"
+          echo "Container logs at time of failure:"
+          docker logs weather-api --tail 50
           exit 1
         fi
         
