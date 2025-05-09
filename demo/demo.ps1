@@ -17,7 +17,7 @@ function Test-CommandExists {
 }
 
 function Show-CICDPipeline {
-    Write-ColorOutput "`n🔄 CI/CD Pipeline Overview" "Magenta"
+    Write-ColorOutput "`n>> CI/CD Pipeline Overview" "Magenta"
     Write-ColorOutput "------------------------" "Magenta"
     
     $steps = @(
@@ -62,7 +62,7 @@ function Show-CICDPipeline {
 }
 
 # Check prerequisites
-Write-ColorOutput "🔍 Checking prerequisites..." "Cyan"
+Write-ColorOutput ">> Checking prerequisites..." "Cyan"
 $prerequisites = @("docker", "kind", "kubectl")
 $missing = @()
 
@@ -78,54 +78,54 @@ if ($missing.Count -gt 0) {
     exit 1
 }
 
-Write-ColorOutput "✅ All prerequisites found!" "Green"
+Write-ColorOutput ">> All prerequisites found!" "Green"
 
 # Show CI/CD Pipeline
 Show-CICDPipeline
 
-Write-ColorOutput "`n🚀 Starting local deployment demo..." "Magenta"
+Write-ColorOutput "`n>> Starting local deployment demo..." "Magenta"
 Write-ColorOutput "This will demonstrate how the service runs in Kubernetes" "Magenta"
 Write-ColorOutput "Press any key to continue..." "Yellow"
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 # Clean up any existing resources
-Write-ColorOutput "🧹 Cleaning up any existing resources..." "Yellow"
+Write-ColorOutput ">> Cleaning up any existing resources..." "Yellow"
 kind delete cluster --name weatherservice 2>$null
-Write-ColorOutput "✅ Cleanup complete!" "Green"
+Write-ColorOutput ">> Cleanup complete!" "Green"
 
 # Create Kind cluster
-Write-ColorOutput "🚀 Creating Kubernetes cluster..." "Cyan"
+Write-ColorOutput ">> Creating Kubernetes cluster..." "Cyan"
 kind create cluster --name weatherservice
-Write-ColorOutput "✅ Cluster created!" "Green"
+Write-ColorOutput ">> Cluster created!" "Green"
 
 # Build and load the Docker image
-Write-ColorOutput "🏗️ Building Docker image..." "Cyan"
+Write-ColorOutput ">> Building Docker image..." "Cyan"
 docker build -t ghcr.io/mcannall/weatherservice:latest ./api
-Write-ColorOutput "📦 Loading image into Kind cluster..." "Cyan"
+Write-ColorOutput ">> Loading image into Kind cluster..." "Cyan"
 kind load docker-image ghcr.io/mcannall/weatherservice:latest --name weatherservice
-Write-ColorOutput "✅ Image loaded!" "Green"
+Write-ColorOutput ">> Image loaded!" "Green"
 
 # Create Kubernetes resources
-Write-ColorOutput "🔧 Creating Kubernetes resources..." "Cyan"
+Write-ColorOutput ">> Creating Kubernetes resources..." "Cyan"
 kubectl create secret generic weatherservice-secrets --from-literal=OPENWEATHERMAP_API_KEY=3ba1f600644f4b4c4290d0a97a0c3878
 kubectl apply -f k8s/
-Write-ColorOutput "✅ Resources created!" "Green"
+Write-ColorOutput ">> Resources created!" "Green"
 
 # Wait for pod to be ready
-Write-ColorOutput "⏳ Waiting for pod to be ready..." "Cyan"
+Write-ColorOutput ">> Waiting for pod to be ready..." "Cyan"
 kubectl wait --for=condition=ready pod -l app=weatherservice --timeout=60s
-Write-ColorOutput "✅ Pod is ready!" "Green"
+Write-ColorOutput ">> Pod is ready!" "Green"
 
 # Start port forwarding in background
-Write-ColorOutput "🔌 Starting port forwarding..." "Cyan"
+Write-ColorOutput ">> Starting port forwarding..." "Cyan"
 $job = Start-Job -ScriptBlock {
     kubectl port-forward service/api 30080:80
 }
 Start-Sleep -Seconds 2
-Write-ColorOutput "✅ Port forwarding started!" "Green"
+Write-ColorOutput ">> Port forwarding started!" "Green"
 
 # Demo the API
-Write-ColorOutput "`n📡 Demonstrating the Weather Service API..." "Magenta"
+Write-ColorOutput "`n>> Demonstrating the Weather Service API..." "Magenta"
 
 $zipCodes = @(
     @{zip = "90210"; city = "Beverly Hills, CA"},
@@ -134,20 +134,20 @@ $zipCodes = @(
 )
 
 foreach ($location in $zipCodes) {
-    Write-ColorOutput "`n🌍 Getting weather for $($location.city) (ZIP: $($location.zip))..." "Yellow"
+    Write-ColorOutput "`n>> Getting weather for $($location.city) (ZIP: $($location.zip))..." "Yellow"
     $response = Invoke-RestMethod -Uri "http://localhost:30080/weather/$($location.zip)"
-    Write-ColorOutput "Temperature: $($response.temperatureC)°C / $($response.temperatureF)°F" "Green"
+    Write-ColorOutput "Temperature: $($response.temperatureC)C / $($response.temperatureF)F" "Green"
     Write-ColorOutput "Conditions: $($response.summary)" "Green"
 }
 
-Write-ColorOutput "`n🎉 Demo completed successfully!" "Magenta"
+Write-ColorOutput "`n>> Demo completed successfully!" "Magenta"
 Write-ColorOutput "Press any key to clean up resources..." "Yellow"
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 # Cleanup
-Write-ColorOutput "`n🧹 Cleaning up resources..." "Cyan"
+Write-ColorOutput "`n>> Cleaning up resources..." "Cyan"
 Stop-Job $job
 Remove-Job $job
 kind delete cluster --name weatherservice
-Write-ColorOutput "✅ All resources cleaned up!" "Green"
-Write-ColorOutput "👋 Thanks for watching the demo!" "Magenta" 
+Write-ColorOutput ">> All resources cleaned up!" "Green"
+Write-ColorOutput ">> Thanks for watching the demo!" "Magenta" 
