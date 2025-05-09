@@ -82,3 +82,7 @@ nunit-*.xml
 
 # BFG Repo Cleaner
 *.jar
+
+# Repository directories
+.git/
+repo.git/
