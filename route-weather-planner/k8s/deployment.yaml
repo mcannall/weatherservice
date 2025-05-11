@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: route-weather-planner
+  labels:
+    app: route-weather-planner
 spec:
   replicas: 1
   selector:
@@ -14,18 +16,17 @@ spec:
     spec:
       containers:
       - name: route-weather-planner
-        image: route-weather-planner:latest
-        imagePullPolicy: Never
+        image: ghcr.io/mcannall/weatherservice/route-weather-planner:latest
         ports:
         - containerPort: 5000
         env:
-        - name: WEATHER_API_URL
-          value: "http://api:80"
         - name: GOOGLE_MAPS_API_KEY
           valueFrom:
             secretKeyRef:
-              name: route-weather-planner-secrets
+              name: weatherservice-secrets
               key: GOOGLE_MAPS_API_KEY
+        - name: API_URL
+          value: "http://api:80"  # Points to the API service
 ---
 apiVersion: v1
 kind: Service
@@ -35,6 +36,7 @@ spec:
   selector:
     app: route-weather-planner
   ports:
-  - port: 80
-    targetPort: 5000
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
   type: ClusterIP 

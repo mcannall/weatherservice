@@ -20,6 +20,9 @@ geolocator = Nominatim(
     timeout=10  # Increase timeout to 10 seconds
 )
 
+# Get API URL from environment variable, default to localhost for development
+API_URL = os.getenv('API_URL', 'http://localhost:30080')
+
 def get_zip_code(lat, lon):
     """Get zip code from coordinates using Nominatim"""
     try:
@@ -270,6 +273,16 @@ def get_route_weather():
     except Exception as e:
         print(f"Error in get_route_weather: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/weather/<zip_code>')
+def get_weather(zip_code):
+    try:
+        # Call the API service
+        response = requests.get(f"{API_URL}/weather/{zip_code}")
+        response.raise_for_status()
+        return jsonify(response.json())
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Error fetching weather data: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 
