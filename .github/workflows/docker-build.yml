@@ -199,3 +199,74 @@ jobs:
         docker stop weather-api
         docker rm weather-api
         echo "Cleanup complete"
+
+  build-and-push-route-weather-planner:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Debug Environment
+        run: |
+          echo "GitHub Repository: ${{ github.repository }}"
+          echo "GitHub Actor: ${{ github.actor }}"
+          echo "GitHub Ref: ${{ github.ref }}"
+          echo "GitHub Event Name: ${{ github.event_name }}"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push route-weather-planner Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./route-weather-planner
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/route-weather-planner:latest
+            ghcr.io/${{ github.repository }}/route-weather-planner:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test route-weather-planner container
+        run: |
+          echo "Starting container..."
+          docker run -d -p 5000:5000 --name route-weather-planner ghcr.io/${{ github.repository }}/route-weather-planner:latest
+          echo "Container started. Checking container status..."
+          docker ps
+          echo "Container logs (first 100 lines):"
+          docker logs route-weather-planner | head -n 100
+          echo "Waiting for Flask app to be ready..."
+          for i in {1..30}; do
+            echo "Attempt $i to connect to Flask app..."
+            if curl -s http://localhost:5000/ > /dev/null; then
+              echo "Flask app is ready!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Flask app failed to start within timeout"
+              echo "Container logs:"
+              docker logs route-weather-planner
+              echo "Container status:"
+              docker ps -a
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "All tests passed!"
+          echo "Cleaning up..."
+          docker stop route-weather-planner
+          docker rm route-weather-planner
+          echo "Cleanup complete"
