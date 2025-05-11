@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: route-weather-planner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: route-weather-planner
+  template:
+    metadata:
+      labels:
+        app: route-weather-planner
+    spec:
+      containers:
+      - name: route-weather-planner
+        image: route-weather-planner:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
+        env:
+        - name: WEATHER_API_URL
+          value: "http://api:80"
+        - name: GOOGLE_MAPS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: route-weather-planner-secrets
+              key: GOOGLE_MAPS_API_KEY
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: route-weather-planner
+spec:
+  selector:
+    app: route-weather-planner
+  ports:
+  - port: 80
+    targetPort: 5000
+  type: ClusterIP 
