@@ -1,73 +1,92 @@
 # Route Weather Planner
 
-A web application that helps plan routes and shows weather conditions along the way. The application integrates with Google Maps for route planning and uses a weather service to provide weather information for locations along the route.
-
-## Features
-
-- Plan routes with multiple stops
-- View route on Google Maps
-- Get weather information for each stop
-- Responsive design for desktop and mobile
+A Flask application that helps plan routes with weather information along the way. The application integrates with Google Maps for route planning and geocoding, and uses a separate weather API service for weather data.
 
 ## Prerequisites
 
-- Docker
-- Kubernetes cluster (e.g., kind)
-- Google Maps API key
-- Access to the weather service API
+- Python 3.9 or higher
+- Docker (for containerized deployment)
+- Kubernetes cluster (for production deployment)
+- Google Maps API key with the following APIs enabled:
+  - Maps JavaScript API
+  - Geocoding API
+  - Directions API
+  - Places API
 
-## Setup
+## Environment Setup
 
-1. Clone the repository
-2. Copy `.env.template` to `.env` and add your Google Maps API key:
+1. Copy the environment template:
+   ```bash
+   cp .env.template .env
    ```
+
+2. Update the `.env` file with your API keys:
+   ```env
    GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
-   WEATHER_API_URL=http://api:80
+   API_URL=http://localhost:30080  # For local development
    ```
 
-3. Build the Docker image:
-   ```bash
-   docker build -t route-weather-planner:latest .
-   ```
+## Local Development
 
-4. Create the Kubernetes secret for the Google Maps API key:
-   ```bash
-   kubectl create secret generic route-weather-planner-secrets \
-     --from-literal=GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
-   ```
-
-5. Deploy to Kubernetes:
-   ```bash
-   kubectl apply -f k8s/
-   ```
-
-6. Port forward to access the application:
-   ```bash
-   kubectl port-forward service/route-weather-planner 8080:80
-   ```
-
-7. Access the application at http://localhost:8080
-
-## Usage
-
-1. Enter your starting address
-2. Click "Add Stop" to add more destinations
-3. Click "Plan Route" to see the route and weather information
-4. The map will show the route with markers for each stop
-5. Weather information will be displayed for each stop
-
-## Development
-
-To run the application locally for development:
-
-1. Install Python dependencies:
+1. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-2. Run the Flask application:
+2. Run the application:
    ```bash
-   python app.py
+   flask run
    ```
 
-3. Access the application at http://localhost:5000 
+The application will be available at `http://localhost:5000`
+
+## Docker Deployment
+
+1. Build the Docker image:
+   ```bash
+   docker build -t route-weather-planner .
+   ```
+
+2. Run the container:
+   ```bash
+   docker run -p 5000:5000 --env-file .env route-weather-planner
+   ```
+
+## Kubernetes Deployment
+
+1. Create the required secrets:
+   ```bash
+   kubectl create secret generic weatherservice-secrets \
+     --from-literal=GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+   ```
+
+2. Apply the Kubernetes manifests:
+   ```bash
+   kubectl apply -f k8s/
+   ```
+
+## API Integration
+
+The application communicates with a separate weather API service. In Kubernetes, this is configured through the `API_URL` environment variable, which points to the internal service name `http://api:80`.
+
+For local development, the API service should be running and accessible at `http://localhost:30080`.
+
+## Features
+
+- Route planning with multiple waypoints
+- Weather information along the route
+- Interactive map display
+- Route optimization options
+- Weather-based route recommendations
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 
