@@ -207,21 +207,18 @@
         }
 
         function addMarker(position, title) {
-            // TODO: Switch back to AdvancedMarkerElement once WebGL issues are resolved
-            const marker = new google.maps.Marker({
-                position: position,
-                map: map,
-                title: title,
-                icon: {
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 8,
-                    fillColor: '#2196F3',
-                    fillOpacity: 1,
-                    strokeColor: '#1976D2',
-                    strokeWeight: 2
-                }
+            const markerView = new google.maps.marker.AdvancedMarkerElement({
+                map,
+                position: { lat: position.lat, lng: position.lon },
+                title,
+                content: new google.maps.marker.PinElement({
+                    background: title.includes('Weather Check Point') ? '#6c757d' : '#0d6efd',
+                    borderColor: title.includes('Weather Check Point') ? '#495057' : '#0a58ca',
+                    glyphColor: '#ffffff',
+                    scale: 1.2
+                }).element
             });
-            markers.push(marker);
+            markers.push(markerView);
         }
 
         function displayWeatherInfo(routeData) {
@@ -277,86 +274,82 @@
         }
 
         async function planRoute() {
-            clearMap();
-            showProgress(true);
-            updateProgress(0, 'Initializing...');
-            
-            const inputs = document.querySelectorAll('#address-inputs input');
-            const addresses = Array.from(inputs).map(input => input.value).filter(addr => addr.trim());
-            const intervalDistance = parseInt(document.getElementById('interval-distance').value);
-            
-            if (addresses.length < 2) {
-                alert('Please enter at least two addresses');
-                showProgress(false);
-                return;
-            }
-
             try {
-                updateProgress(10, 'Getting route information...');
+                clearMap();
+                showProgress(true);
+                updateProgress(10, "Getting addresses...");
+
+                const inputs = document.querySelectorAll('#address-inputs input');
+                const addresses = Array.from(inputs).map(input => input.value.trim());
+
+                // Validate addresses
+                if (addresses.length < 2) {
+                    alert("Please enter at least a starting point and destination.");
+                    showProgress(false);
+                    return;
+                }
+
+                if (addresses.some(addr => !addr)) {
+                    alert("Please fill in all address fields.");
+                    showProgress(false);
+                    return;
+                }
+
+                const intervalDistance = parseInt(document.getElementById('interval-distance').value);
+                const avoidHighways = document.getElementById('avoid-highways').checked;
+                const avoidTolls = document.getElementById('avoid-tolls').checked;
+
+                updateProgress(30, "Planning route...");
+
+                const requestData = {
+                    addresses: addresses,
+                    interval_distance: intervalDistance,
+                    preferences: {
+                        avoid_highways: avoidHighways,
+                        avoid_tolls: avoidTolls
+                    }
+                };
+
+                console.log("Sending request with data:", requestData);
+
                 const response = await fetch('/get_route_weather', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ 
-                        addresses,
-                        interval_distance: intervalDistance,
-                        preferences: {
-                            avoid_highways: document.getElementById('avoid-highways').checked,
-                            avoid_tolls: document.getElementById('avoid-tolls').checked
-                        }
-                    })
+                    body: JSON.stringify(requestData)
                 });
 
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Server responded with status ${response.status}`);
+                }
+
+                updateProgress(60, "Processing weather data...");
                 const data = await response.json();
                 
-                if (response.ok) {
-                    updateProgress(50, 'Calculating route...');
-                    const route = data.route;
-                    
-                    // Add markers for each stop
-                    route.forEach(stop => {
-                        addMarker(
-                            { lat: stop.lat, lng: stop.lon },
-                            stop.address
-                        );
-                    });
-
-                    // Create waypoints for the route
-                    const waypoints = route.slice(1, -1).map(stop => ({
-                        location: new google.maps.LatLng(stop.lat, stop.lon),
-                        stopover: true
-                    }));
-
-                    // Calculate and display the route
-                    const request = {
-                        origin: new google.maps.LatLng(route[0].lat, route[0].lon),
-                        destination: new google.maps.LatLng(route[route.length - 1].lat, route[route.length - 1].lon),
-                        waypoints: waypoints,
-                        travelMode: google.maps.TravelMode.DRIVING,
-                        avoidHighways: document.getElementById('avoid-highways').checked,
-                        avoidTolls: document.getElementById('avoid-tolls').checked
-                    };
-
-                    directionsService.route(request, (result, status) => {
-                        if (status === 'OK') {
-                            updateProgress(80, 'Displaying route and weather information...');
-                            directionsRenderer.setDirections(result);
-                            displayWeatherInfo(route);
-                            updateProgress(100, 'Complete!');
-                            setTimeout(() => showProgress(false), 1000);
-                        } else {
-                            alert('Error calculating route: ' + status);
-                            showProgress(false);
-                        }
-                    });
-                } else {
-                    alert(data.error || 'Error planning route');
-                    showProgress(false);
+                if (!data.route || !data.route.length) {
+                    throw new Error("No route data received from server");
                 }
+
+                updateProgress(80, "Displaying route...");
+                
+                // Add markers for each point
+                data.route.forEach((point, index) => {
+                    const position = { lat: point.lat, lon: point.lon };
+                    const title = point.is_stop ? point.address : `Weather Check Point ${index + 1}`;
+                    addMarker(position, title);
+                });
+
+                // Display weather information
+                displayWeatherInfo(data.route);
+                
+                updateProgress(100, "Route planning complete!");
+                setTimeout(() => showProgress(false), 1000);
+
             } catch (error) {
-                console.error('Error:', error);
-                alert('Error planning route');
+                console.error("Error planning route:", error);
+                alert(`Error planning route: ${error.message}`);
                 showProgress(false);
             }
         }
