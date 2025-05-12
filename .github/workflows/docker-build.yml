@@ -270,3 +270,44 @@ jobs:
           docker stop route-weather-planner
           docker rm route-weather-planner
           echo "Cleanup complete"
+
+  deploy-to-oracle:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure OCI CLI
+      uses: oracle-actions/configure-cli@v1
+      with:
+        auth-type: 'api_key'
+        config-file: ${{ secrets.OCI_CONFIG }}
+        key-file: ${{ secrets.OCI_KEY_FILE }}
+
+    - name: Get kubeconfig
+      run: |
+        oci ce cluster create-kubeconfig \
+          --cluster-id ${{ secrets.OCI_CLUSTER_ID }} \
+          --file $HOME/.kube/config \
+          --region ${{ secrets.OCI_REGION }} \
+          --token-version 2.0.0
+
+    - name: Deploy to Kubernetes
+      run: |
+        # Create secrets
+        kubectl create secret generic weatherservice-secrets \
+          --from-literal=OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY }} \
+          --from-literal=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+        # Deploy API service
+        kubectl apply -f api/deployment.yaml
+
+        # Deploy route-weather-planner
+        kubectl apply -f route-weather-planner/k8s/deployment.yaml
+
+        # Wait for deployments to be ready
+        kubectl wait --for=condition=available --timeout=300s deployment/api
+        kubectl wait --for=condition=available --timeout=300s deployment/route-weather-planner
