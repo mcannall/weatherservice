@@ -23,9 +23,49 @@ geolocator = Nominatim(
 # Get API URL from environment variable, default to localhost for development
 API_URL = os.getenv('API_URL', 'http://localhost:30080')
 
-def get_zip_code(lat, lon):
-    """Get zip code from coordinates using Nominatim"""
+def get_coordinates_and_zip(address):
+    """Get coordinates and zip code for an address using Google Maps API"""
     try:
+        # First try Google Geocoding
+        geocode_result = gmaps.geocode(address)
+        if not geocode_result:
+            return None, None, f"Could not find location for address: {address}"
+        
+        location = geocode_result[0]
+        lat = location['geometry']['location']['lat']
+        lon = location['geometry']['location']['lng']
+        
+        # Get zip code from Google's result
+        zip_code = None
+        for component in location['address_components']:
+            if 'postal_code' in component['types']:
+                zip_code = component['long_name']
+                break
+        
+        # If no zip code found in Google's result, try Nominatim as backup
+        if not zip_code:
+            try:
+                nominatim_location = geolocator.reverse(f"{lat}, {lon}", timeout=10)
+                if nominatim_location and nominatim_location.raw.get('address', {}).get('postcode'):
+                    zip_code = nominatim_location.raw['address']['postcode']
+            except Exception:
+                pass  # Silently fail and continue without zip code
+        
+        return lat, lon, zip_code
+    except Exception as e:
+        return None, None, f"Error finding location for address {address}: {str(e)}"
+
+def get_zip_code(lat, lon):
+    """Get zip code from coordinates using Google Maps API first, then Nominatim as backup"""
+    try:
+        # Try Google Geocoding first
+        reverse_result = gmaps.reverse_geocode((lat, lon))
+        if reverse_result:
+            for component in reverse_result[0]['address_components']:
+                if 'postal_code' in component['types']:
+                    return component['long_name']
+        
+        # If Google doesn't return a zip code, try Nominatim as backup
         location = geolocator.reverse(f"{lat}, {lon}", timeout=10)
         if location and location.raw.get('address', {}).get('postcode'):
             return location.raw['address']['postcode']
@@ -158,19 +198,15 @@ def get_route_weather():
         # Get coordinates for each address
         coordinates = []
         for address in addresses:
-            try:
-                location = geolocator.geocode(address, timeout=10)
-                if location:
-                    coordinates.append({
-                        'lat': location.latitude,
-                        'lon': location.longitude,
-                        'address': address
-                    })
-                else:
-                    return jsonify({'error': f'Could not find coordinates for address: {address}'}), 400
-            except Exception as e:
-                print(f"Error geocoding address {address}: {str(e)}")
-                return jsonify({'error': f'Error geocoding address {address}: {str(e)}'}), 500
+            lat, lon, result = get_coordinates_and_zip(address)
+            if lat is None or lon is None:
+                return jsonify({'error': result}), 400
+            
+            coordinates.append({
+                'lat': lat,
+                'lon': lon,
+                'address': address
+            })
 
         # First, get the optimized route using Google Directions API
         try:
@@ -283,6 +319,31 @@ def get_weather(zip_code):
         return jsonify(response.json())
     except requests.exceptions.RequestException as e:
         return jsonify({"error": f"Error fetching weather data: {str(e)}"}), 500
+
+@app.route('/test-weather-connection')
+def test_weather_connection():
+    try:
+        # Test with a known zip code
+        weather_data = get_weather_data('90210')
+        if weather_data:
+            return jsonify({
+                'status': 'success',
+                'message': 'Successfully connected to weather API',
+                'weather_data': weather_data,
+                'api_url': WEATHER_API_URL
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to get weather data',
+                'api_url': WEATHER_API_URL
+            }), 500
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}',
+            'api_url': WEATHER_API_URL
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 
