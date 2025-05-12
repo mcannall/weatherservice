@@ -19,6 +19,13 @@ spec:
         image: ghcr.io/mcannall/weatherservice/route-weather-planner:latest
         ports:
         - containerPort: 5000
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
         env:
         - name: GOOGLE_MAPS_API_KEY
           valueFrom:
