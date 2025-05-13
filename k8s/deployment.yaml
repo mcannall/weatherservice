@@ -53,6 +53,8 @@ spec:
         app: weatherservice
         component: route-planner
     spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64
       containers:
       - name: route-planner
         image: ghcr.io/mcannall/weatherservice/route-weather-planner:latest
