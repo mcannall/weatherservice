@@ -288,11 +288,12 @@ jobs:
         OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
         OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
         OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+        OCI_CLUSTER_ID: ${{ secrets.OCI_CLUSTER_ID }}
         SUPPRESS_LABEL_WARNING: True
       run: |
         # Debug: Check if required variables are set (without exposing values)
         echo "Checking required variables..."
-        for var in "OCI_CLI_USER" "OCI_CLI_TENANCY" "OCI_CLI_FINGERPRINT" "OCI_CLI_KEY_CONTENT" "OCI_CLI_REGION"; do
+        for var in "OCI_CLI_USER" "OCI_CLI_TENANCY" "OCI_CLI_FINGERPRINT" "OCI_CLI_KEY_CONTENT" "OCI_CLI_REGION" "OCI_CLUSTER_ID"; do
           if [ -z "${!var}" ]; then
             echo "Error: $var is not set"
             exit 1
@@ -328,15 +329,15 @@ jobs:
         /home/runner/bin/oci -v
         
         # Debug: Verify cluster ID
-        echo "Cluster ID: ${OCI_CLUSTER_ID:-not set}"
-        echo "Region: ${OCI_CLI_REGION:-not set}"
+        echo "Cluster ID: ${OCI_CLUSTER_ID}"
+        echo "Region: ${OCI_CLI_REGION}"
         
         # Generate kubeconfig with explicit path to OCI CLI
         echo "Generating kubeconfig..."
         /home/runner/bin/oci ce cluster create-kubeconfig \
-          --cluster-id "${{ secrets.OCI_CLUSTER_ID }}" \
+          --cluster-id "${OCI_CLUSTER_ID}" \
           --file "${{ github.workspace }}/.kubeconfig" \
-          --region "${{ secrets.OCI_REGION }}" \
+          --region "${OCI_CLI_REGION}" \
           --token-version 2.0.0
 
     - name: Deploy to Kubernetes
