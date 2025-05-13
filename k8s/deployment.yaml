@@ -57,6 +57,8 @@ spec:
       - name: route-planner
         image: ghcr.io/mcannall/weatherservice/route-weather-planner:latest
         imagePullPolicy: Always
+        command: ["gunicorn"]
+        args: ["--workers=4", "--bind=0.0.0.0:5000", "--access-logfile=-", "--error-logfile=-", "--log-level=info", "--preload", "wsgi:app"]
         ports:
         - containerPort: 5000
         env:
