@@ -57,8 +57,16 @@ spec:
       - name: route-planner
         image: ghcr.io/mcannall/weatherservice/route-weather-planner:latest
         imagePullPolicy: Always
-        command: ["gunicorn"]
-        args: ["--workers=4", "--bind=0.0.0.0:5000", "--access-logfile=-", "--error-logfile=-", "--log-level=info", "--preload", "wsgi:app"]
+        command:
+        - gunicorn
+        args:
+        - --workers=4
+        - --bind=0.0.0.0:5000
+        - --access-logfile=-
+        - --error-logfile=-
+        - --log-level=info
+        - --preload
+        - wsgi:app
         ports:
         - containerPort: 5000
         env:
@@ -68,4 +76,6 @@ spec:
               name: weatherservice-secrets
               key: GOOGLE_MAPS_API_KEY
         - name: API_URL
-          value: "http://weather-api-service" 
+          value: http://weather-api-service
+      imagePullSecrets:
+      - name: ghcr-secret 

@@ -235,6 +235,7 @@ jobs:
         with:
           context: ./route-weather-planner
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ github.repository }}/route-weather-planner:latest
             ghcr.io/${{ github.repository }}/route-weather-planner:${{ github.sha }}
@@ -299,6 +300,8 @@ jobs:
         # Configure OCI CLI
         mkdir -p ~/.oci
         echo "$OCI_CLI_KEY_CONTENT" > ~/.oci/oci_api_key.pem
+        # Add OCI_API_KEY line to suppress warning
+        echo "OCI_API_KEY" >> ~/.oci/oci_api_key.pem
         chmod 600 ~/.oci/oci_api_key.pem
         
         # Create config file
@@ -311,6 +314,9 @@ jobs:
         key_file=~/.oci/oci_api_key.pem
         EOF
         chmod 600 ~/.oci/config
+        
+        # Set environment variable to suppress warning
+        echo "SUPPRESS_LABEL_WARNING=True" >> $GITHUB_ENV
         
         # Generate kubeconfig
         $HOME/lib/oracle-cli/bin/oci ce cluster create-kubeconfig \
