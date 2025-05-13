@@ -1,32 +1,69 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: api
+  name: weather-api
   labels:
     app: weatherservice
+    component: api
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: weatherservice
+      component: api
   template:
     metadata:
       labels:
         app: weatherservice
+        component: api
     spec:
       containers:
       - name: api
         image: ghcr.io/mcannall/weatherservice:latest
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         ports:
         - containerPort: 80
         env:
         - name: ASPNETCORE_ENVIRONMENT
-          value: "Development"
+          value: "Production"
         - name: OpenWeatherMap__ApiKey
           valueFrom:
             secretKeyRef:
               name: weatherservice-secrets
               key: OPENWEATHERMAP_API_KEY
         - name: OpenWeatherMap__BaseUrl
-          value: "https://api.openweathermap.org/data/2.5" 
+          value: "https://api.openweathermap.org/data/2.5"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: route-planner
+  labels:
+    app: weatherservice
+    component: route-planner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: weatherservice
+      component: route-planner
+  template:
+    metadata:
+      labels:
+        app: weatherservice
+        component: route-planner
+    spec:
+      containers:
+      - name: route-planner
+        image: ghcr.io/mcannall/weatherservice/route-weather-planner:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+        env:
+        - name: API_URL
+          value: "http://weather-api-service:80"
+        - name: GOOGLE_MAPS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: weatherservice-secrets
+              key: GOOGLE_MAPS_API_KEY 

@@ -9,7 +9,12 @@ COPY . .
 
 ENV API_URL=http://weather-api:80
 
+# Create startup script
+RUN echo '#!/bin/sh\n\
+exec gunicorn --workers=4 --bind=0.0.0.0:5000 --access-logfile=- --error-logfile=- --log-level=info app:app\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
 EXPOSE 5000
 
-# Use Gunicorn with 4 worker processes
-CMD ["gunicorn", "--workers=4", "--bind=0.0.0.0:5000", "--access-logfile=-", "--error-logfile=-", "--log-level=info", "app:app"] 
+# Use the startup script
+CMD ["/app/start.sh"] 
