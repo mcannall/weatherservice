@@ -1,38 +1,33 @@
+import os
+import sys
 from flask import Flask, render_template, request, jsonify
 import requests
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
-import os
 from dotenv import load_dotenv
 import math
 import googlemaps
 import logging
 import polyline
-import sys
 
-load_dotenv()
-
-# Configure logging
+# Configure logging first
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Prevent Flask development server
-def verify_production_server():
-    """Verify that we're running under Gunicorn"""
-    if any([
-        'WERKZEUG_RUN_MAIN' in os.environ,
-        os.environ.get('FLASK_ENV') == 'development',
-        os.environ.get('WERKZEUG_SERVER_FD'),
-        'flask' in sys.argv[0].lower() and 'run' in sys.argv,
-        not os.environ.get('GUNICORN_CMD_ARGS') and not os.environ.get('GUNICORN_WORKERS')
-    ]):
-        logger.error("Development server detected or Gunicorn not found. Use Gunicorn to run this application.")
+def verify_gunicorn():
+    """Verify that we're running under Gunicorn WSGI server"""
+    if 'gunicorn' not in sys.modules:
+        logger.error("Application must be run using Gunicorn WSGI server")
         sys.exit(1)
 
-verify_production_server()
+# Verify Gunicorn is being used
+verify_gunicorn()
+
+# Load environment variables
+load_dotenv()
 
 # Create Flask app
 app = Flask(__name__)
