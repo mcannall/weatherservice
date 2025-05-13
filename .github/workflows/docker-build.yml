@@ -337,8 +337,7 @@ jobs:
           --cluster-id "${{ secrets.OCI_CLUSTER_ID }}" \
           --file "${{ github.workspace }}/.kubeconfig" \
           --region "${{ secrets.OCI_REGION }}" \
-          --token-version 2.0.0 \
-          --auth security_token
+          --token-version 2.0.0
 
     - name: Deploy to Kubernetes
       env:
