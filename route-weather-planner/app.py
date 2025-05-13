@@ -19,7 +19,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Create Flask app and prevent development server
 app = Flask(__name__)
+
+if 'WERKZEUG_RUN_MAIN' in os.environ or os.environ.get('FLASK_ENV') == 'development':
+    logger.error("Development server detected. Use Gunicorn instead.")
+    sys.exit(1)
 
 # Configuration
 API_URL = os.getenv('API_URL', 'http://api:80')

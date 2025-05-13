@@ -9,11 +9,12 @@ COPY . .
 
 ENV API_URL=http://weather-api:80
 ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.py
+ENV FLASK_APP=wsgi.py
 ENV FLASK_ENV=production
+ENV FLASK_DEBUG=0
 ENV GUNICORN_CMD_ARGS="--workers=4 --bind=0.0.0.0:5000 --access-logfile=- --error-logfile=- --log-level=info"
 
 EXPOSE 5000
 
-# Run Gunicorn directly
-ENTRYPOINT ["gunicorn", "app:app"] 
+# Remove the entrypoint script since we're enforcing Gunicorn directly
+CMD ["gunicorn", "wsgi:app"] 
