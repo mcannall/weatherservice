@@ -76,6 +76,14 @@ jobs:
           oci ce cluster create-kubeconfig --cluster-id ${{ secrets.OKE_CLUSTER_ID }} --file $HOME/.kube/config --region us-chicago-1 --token-version 2.0.0
           chmod 600 $HOME/.kube/config
 
+      - name: Create image pull secret
+        run: |
+          kubectl delete secret ghcr-secret --ignore-not-found
+          kubectl create secret docker-registry ghcr-secret \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }}
+
       - name: Update deployment file with SHA
         run: |
           sed -i "s/\${GITHUB_SHA}/${{ github.sha }}/g" route-weather-planner/k8s/deployment.yaml
