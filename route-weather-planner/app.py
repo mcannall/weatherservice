@@ -109,6 +109,7 @@ def get_weather_data(lat_or_zip, lon=None):
             response.raise_for_status()
             weather_data = response.json()
             weather_data['zip_code'] = zip_code  # Add zip code to the response
+            weather_data['country'] = weather_data.get('country', 'US')  # Ensure country is set, default to US
             return weather_data
         except requests.RequestException as e:
             print(f"Error fetching weather data for zip {zip_code}: {e}")
@@ -117,7 +118,8 @@ def get_weather_data(lat_or_zip, lon=None):
                 'zip_code': zip_code,
                 'temperatureC': None,
                 'temperatureF': None,
-                'summary': 'Weather service unavailable'
+                'summary': 'Weather service unavailable',
+                'country': 'US'  # Default to US for error cases
             }
     except Exception as e:
         print(f"Error in get_weather_data: {str(e)}")
