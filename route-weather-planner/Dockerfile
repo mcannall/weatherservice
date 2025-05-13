@@ -9,6 +9,8 @@ COPY . .
 
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
+ENV WEATHER_API_URL=http://weather-api:80
+ENV API_URL=http://weather-api:80
 
 EXPOSE 5000
 
