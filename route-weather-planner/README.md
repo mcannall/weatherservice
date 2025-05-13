@@ -1,6 +1,12 @@
 # Route Weather Planner
 
-A Flask application that helps plan routes with weather information along the way. The application integrates with Google Maps for route planning and geocoding, and uses a separate weather API service for weather data.
+A service that provides weather information along a route between two points.
+
+## Features
+- Route planning using Google Maps API
+- Weather information from OpenWeatherMap
+- Multi-architecture support (AMD64/ARM64)
+- Production-ready with Gunicorn WSGI server
 
 ## Prerequisites
 
