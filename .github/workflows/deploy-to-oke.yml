@@ -1,19 +1,13 @@
 name: Deploy to Oracle Kubernetes Engine
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'api/**'
-      - 'route-weather-planner/**'
-      - 'k8s/**'
-      - '.github/workflows/deploy-to-oke.yml'
   workflow_run:
     workflows: 
-      - "Build and Push Docker Image"
       - "Route Weather Planner CI/CD"
     types:
       - completed
+    branches:
+      - main
 
 env:
   REGISTRY: ghcr.io
@@ -23,7 +17,7 @@ jobs:
   deploy:
     name: Deploy to OKE
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     permissions:
       contents: read
@@ -33,6 +27,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Install OCI CLI
         run: |
@@ -82,14 +78,15 @@ jobs:
 
       - name: Update Kubernetes Deployments
         run: |
-          # Update image pull policy and registry paths in deployment
-          sed -i 's|imagePullPolicy: Never|imagePullPolicy: Always|g' k8s/deployment.yaml
-          sed -i "s|image: ghcr.io/mcannall/weatherservice:latest|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest|g" k8s/deployment.yaml
-          sed -i "s|image: ghcr.io/mcannall/weatherservice/route-weather-planner:latest|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/route-weather-planner:latest|g" k8s/deployment.yaml
+          # Get the short SHA
+          SHORT_SHA=$(echo ${{ github.event.workflow_run.head_sha }} | cut -c1-7)
           
-          # Apply Kubernetes configurations
-          kubectl apply -f k8s/deployment.yaml
-          kubectl apply -f k8s/service.yaml
+          # Update deployments with correct image tags
+          kubectl set image deployment/route-planner \
+            route-planner=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/route-weather-planner:sha-$SHORT_SHA
+          
+          kubectl set image deployment/weather-api \
+            api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-$SHORT_SHA
 
       - name: Wait for deployments
         run: |
