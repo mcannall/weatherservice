@@ -30,34 +30,15 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Install OCI CLI
-        run: |
-          curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
-          chmod +x install.sh
-          ./install.sh --accept-all-defaults
-          echo "$HOME/oracle-cli/bin" >> $GITHUB_PATH
-
-      - name: Configure OCI CLI
-        env:
-          OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
-          OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
-          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
-          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-        run: |
-          mkdir -p ~/.oci
-          # Create config file
-          cat > ~/.oci/config << EOF
-          [DEFAULT]
-          user=$OCI_CLI_USER
-          fingerprint=$OCI_CLI_FINGERPRINT
-          tenancy=$OCI_CLI_TENANCY
-          region=$OCI_CLI_REGION
-          EOF
-          # Save private key
-          echo "$OCI_CLI_KEY_CONTENT" > ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/config
+      - name: Configure Oracle Cloud Infrastructure CLI
+        uses: oracle-actions/configure-cli@v1
+        with:
+          auth_type: api_key
+          user_id: ${{ secrets.OCI_CLI_USER }}
+          fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          tenancy: ${{ secrets.OCI_CLI_TENANCY }}
+          region: ${{ secrets.OCI_REGION }}
+          private_key: ${{ secrets.OCI_PRIVATE_KEY }}
 
       - name: Configure kubectl
         run: |
