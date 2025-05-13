@@ -55,6 +55,8 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/arch: amd64
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: route-planner
         image: ghcr.io/mcannall/weatherservice/route-weather-planner:latest
@@ -78,6 +80,4 @@ spec:
               name: weatherservice-secrets
               key: GOOGLE_MAPS_API_KEY
         - name: API_URL
-          value: http://weather-api-service
-      imagePullSecrets:
-      - name: ghcr-secret 
+          value: http://weather-api-service 
