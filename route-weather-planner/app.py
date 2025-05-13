@@ -21,16 +21,13 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configuration
-WEATHER_API_URL = os.getenv('WEATHER_API_URL', 'http://api:80')
+API_URL = os.getenv('API_URL', 'http://api:80')
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 geolocator = Nominatim(
     user_agent="route_weather_planner",
     timeout=10  # Increase timeout to 10 seconds
 )
-
-# Get API URL from environment variable, default to localhost for development
-API_URL = os.getenv('API_URL', 'http://localhost:30080')
 
 def get_coordinates_and_zip(address):
     """Get coordinates and zip code for an address using Google Maps API"""
@@ -105,7 +102,7 @@ def get_weather_data(lat_or_zip, lon=None):
                 return None
 
         try:
-            response = requests.get(f"{WEATHER_API_URL}/weather/{zip_code}", timeout=5)
+            response = requests.get(f"{API_URL}/weather/{zip_code}", timeout=5)
             response.raise_for_status()
             weather_data = response.json()
             weather_data['zip_code'] = zip_code  # Add zip code to the response
@@ -354,19 +351,19 @@ def test_weather_connection():
                 'status': 'success',
                 'message': 'Successfully connected to weather API',
                 'weather_data': weather_data,
-                'api_url': WEATHER_API_URL
+                'api_url': API_URL
             })
         else:
             return jsonify({
                 'status': 'error',
                 'message': 'Failed to get weather data',
-                'api_url': WEATHER_API_URL
+                'api_url': API_URL
             }), 500
     except Exception as e:
         return jsonify({
             'status': 'error',
             'message': f'Error: {str(e)}',
-            'api_url': WEATHER_API_URL
+            'api_url': API_URL
         }), 500
 
 if __name__ == '__main__':
