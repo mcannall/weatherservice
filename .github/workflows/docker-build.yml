@@ -280,20 +280,38 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Configure OCI CLI
-      uses: oracle-actions/configure-cli@v1
-      with:
-        auth-type: 'api_key'
-        config-file: ${{ secrets.OCI_CONFIG }}
-        key-file: ${{ secrets.OCI_KEY_FILE }}
+    - name: Install and configure OCI CLI
+      run: |
+        # Install OCI CLI
+        curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
+        chmod +x install.sh
+        ./install.sh --accept-all-defaults
+        echo "$HOME/oracle-cli/bin" >> $GITHUB_PATH
+        
+        # Configure OCI CLI
+        mkdir -p ~/.oci
+        echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+        chmod 600 ~/.oci/oci_api_key.pem
+        
+        # Create config file
+        cat > ~/.oci/config << EOF
+        [DEFAULT]
+        user=${{ secrets.OCI_CLI_USER }}
+        fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+        tenancy=${{ secrets.OCI_CLI_TENANCY }}
+        region=${{ secrets.OCI_REGION }}
+        key_file=~/.oci/oci_api_key.pem
+        EOF
+        chmod 600 ~/.oci/config
 
-    - name: Get kubeconfig
+    - name: Configure kubectl
       run: |
         oci ce cluster create-kubeconfig \
           --cluster-id ${{ secrets.OCI_CLUSTER_ID }} \
           --file $HOME/.kube/config \
           --region ${{ secrets.OCI_REGION }} \
           --token-version 2.0.0
+        chmod 600 $HOME/.kube/config
 
     - name: Deploy to Kubernetes
       run: |
@@ -304,11 +322,13 @@ jobs:
           --dry-run=client -o yaml | kubectl apply -f -
 
         # Deploy API service
-        kubectl apply -f api/deployment.yaml
-
-        # Deploy route-weather-planner
-        kubectl apply -f route-weather-planner/k8s/deployment.yaml
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml
 
         # Wait for deployments to be ready
-        kubectl wait --for=condition=available --timeout=300s deployment/api
-        kubectl wait --for=condition=available --timeout=300s deployment/route-weather-planner
+        kubectl rollout status deployment/weather-api
+        kubectl rollout status deployment/route-planner
+
+        # Get service information
+        echo "Service endpoints:"
+        kubectl get services -l app=weatherservice
