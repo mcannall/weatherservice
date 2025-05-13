@@ -60,10 +60,10 @@ spec:
         ports:
         - containerPort: 5000
         env:
-        - name: API_URL
-          value: "http://weather-api-service:80"
         - name: GOOGLE_MAPS_API_KEY
           valueFrom:
             secretKeyRef:
               name: weatherservice-secrets
-              key: GOOGLE_MAPS_API_KEY 
+              key: GOOGLE_MAPS_API_KEY
+        - name: API_URL
+          value: "http://weather-api-service" 
