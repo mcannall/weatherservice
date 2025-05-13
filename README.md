@@ -402,3 +402,88 @@ This project is licensed under the MIT License - see the LICENSE file for detail
   - Semantic versioning
   - Automated tagging
   - Release management
+
+### WSGI Server Configuration
+
+#### Gunicorn (Green Unicorn)
+The Route Planner service uses Gunicorn as its production WSGI (Web Server Gateway Interface) server instead of Flask's built-in development server. Here's why and how it's configured:
+
+```yaml
+command:
+- gunicorn
+args:
+- --workers=4
+- --bind=0.0.0.0:5000
+- --access-logfile=-
+- --error-logfile=-
+- --log-level=info
+- --preload
+- wsgi:app
+```
+
+**Why Gunicorn?**
+- Production-grade WSGI HTTP Server for Python
+- Better performance and stability than Flask's development server
+- Process management and monitoring
+- Automatic worker process management
+- Proper handling of concurrent requests
+
+**Configuration Explained**:
+- `--workers=4`: Uses 4 worker processes
+  - Calculated based on: CPU cores * 2 + 1
+  - Balances CPU usage and memory consumption
+  - Provides redundancy and request handling capacity
+
+- `--bind=0.0.0.0:5000`: Network binding
+  - Listens on all network interfaces
+  - Port 5000 matches container configuration
+  - Allows Kubernetes service discovery
+
+- `--access-logfile=- and --error-logfile=-`: Logging configuration
+  - Outputs to stdout/stderr
+  - Integrates with container logging
+  - Enables log collection by Kubernetes
+
+- `--log-level=info`: Logging detail
+  - Provides operational visibility
+  - Balances information and performance
+  - Helps with troubleshooting
+
+- `--preload`: Application loading
+  - Loads application code before forking
+  - Reduces memory usage
+  - Catches syntax errors early
+  - Ensures consistent application state
+
+- `wsgi:app`: Application entry point
+  - Points to the WSGI callable in wsgi.py
+  - Standard Python WSGI interface
+  - Separates application and server concerns
+
+**Benefits of This Configuration**:
+1. **Performance**:
+   - Multiple workers handle concurrent requests
+   - Pre-loading reduces memory footprint
+   - Efficient process management
+
+2. **Reliability**:
+   - Worker management and recovery
+   - Process isolation
+   - Graceful reload capability
+
+3. **Monitoring**:
+   - Detailed access and error logs
+   - Process status information
+   - Health check capability
+
+4. **Security**:
+   - Process isolation
+   - No development server vulnerabilities
+   - Proper production configuration
+
+5. **Container Integration**:
+   - Proper signal handling
+   - Container-friendly logging
+   - Clean process management
+
+This configuration provides a robust, production-ready environment for the Flask application while maintaining good performance and reliability characteristics.
