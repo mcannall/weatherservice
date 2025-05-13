@@ -33,13 +33,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          platforms: linux/amd64,linux/arm64
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/amd64,linux/arm64
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -48,55 +41,49 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=sha-
-            type=ref,event=branch
-            type=raw,value=latest,enable={{is_default_branch}}
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: ./route-weather-planner
-          push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
+    environment: production
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'latest'
-
-      - name: Set up kubeconfig
+      - name: Install OCI CLI
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
+          curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
+          chmod +x install.sh
+          ./install.sh --accept-all-defaults
+
+      - name: Configure OCI CLI
+        run: |
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_CONFIG }}" > ~/.oci/config
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/private.pem
+          chmod 600 ~/.oci/private.pem
+
+      - name: Get OKE kubeconfig
+        run: |
+          oci ce cluster create-kubeconfig --cluster-id ${{ secrets.OKE_CLUSTER_ID }} --file $HOME/.kube/config --region us-chicago-1 --token-version 2.0.0
           chmod 600 $HOME/.kube/config
 
-      - name: Deploy to Kubernetes
+      - name: Update deployment file with SHA
         run: |
-          # Update the deployment with the new image
-          kubectl set image deployment/route-weather-planner \
-            route-weather-planner=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          
-          # Wait for rollout to complete
-          kubectl rollout status deployment/route-weather-planner 
+          sed -i "s/\${GITHUB_SHA}/${{ github.sha }}/g" route-weather-planner/k8s/deployment.yaml
+
+      - name: Deploy to OKE
+        run: |
+          kubectl apply -f route-weather-planner/k8s/deployment.yaml
+          kubectl rollout status deployment/route-planner --timeout=300s
 
   test:
     needs: deploy

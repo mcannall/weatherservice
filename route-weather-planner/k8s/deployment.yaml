@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: route-planner
+  labels:
+    app: weatherservice
+    component: route-planner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: weatherservice
+      component: route-planner
+  template:
+    metadata:
+      labels:
+        app: weatherservice
+        component: route-planner
+    spec:
+      containers:
+      - name: route-planner
+        image: ghcr.io/mcannall/weatherservice/route-weather-planner:${GITHUB_SHA}
+        ports:
+        - containerPort: 5000
+        command: ["gunicorn"]
+        args:
+        - "--workers=4"
+        - "--bind=0.0.0.0:5000"
+        - "--access-logfile=-"
+        - "--error-logfile=-"
+        - "--log-level=info"
+        - "--preload"
+        - "wsgi:app"
+        env:
+        - name: GOOGLE_MAPS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: weatherservice-secrets
+              key: GOOGLE_MAPS_API_KEY
+        - name: API_URL
+          value: http://weather-api-service 
