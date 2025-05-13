@@ -15,19 +15,24 @@ ENV FLASK_ENV=production
 ENV FLASK_DEBUG=0
 ENV FLASK_RUN_FROM_CLI=false
 ENV WERKZEUG_RUN_MAIN=false
-ENV GUNICORN_CMD_ARGS="--preload --workers=4 --bind=0.0.0.0:5000 --access-logfile=- --error-logfile=- --log-level=info"
+ENV GUNICORN_WORKERS=4
+ENV GUNICORN_BIND=0.0.0.0:5000
+ENV GUNICORN_LOG_LEVEL=info
 
 EXPOSE 5000
 
-# Create a script to ensure Gunicorn is used
-RUN echo '#!/bin/bash\n\
-if [[ "$1" == "flask" || "$1" == "python" ]]; then\n\
-    echo "Error: Direct Flask/Python execution is disabled. Use Gunicorn."\n\
-    exit 1\n\
-fi\n\
-exec "$@"\n\
-' > /usr/local/bin/entrypoint.sh \
-&& chmod +x /usr/local/bin/entrypoint.sh
+# Create a wrapper script that enforces Gunicorn
+RUN echo '#!/bin/sh\n\
+exec gunicorn \\\n\
+    --workers=$GUNICORN_WORKERS \\\n\
+    --bind=$GUNICORN_BIND \\\n\
+    --log-level=$GUNICORN_LOG_LEVEL \\\n\
+    --access-logfile=- \\\n\
+    --error-logfile=- \\\n\
+    --preload \\\n\
+    wsgi:app\n\
+' > /usr/local/bin/start.sh \
+&& chmod +x /usr/local/bin/start.sh
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["gunicorn", "wsgi:app"] 
+# Use the wrapper script as the entrypoint
+ENTRYPOINT ["/usr/local/bin/start.sh"] 

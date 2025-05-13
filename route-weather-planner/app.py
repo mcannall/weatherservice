@@ -21,13 +21,15 @@ logger = logging.getLogger(__name__)
 
 # Prevent Flask development server
 def verify_production_server():
+    """Verify that we're running under Gunicorn"""
     if any([
         'WERKZEUG_RUN_MAIN' in os.environ,
         os.environ.get('FLASK_ENV') == 'development',
         os.environ.get('WERKZEUG_SERVER_FD'),
-        'flask' in sys.argv[0].lower() and 'run' in sys.argv
+        'flask' in sys.argv[0].lower() and 'run' in sys.argv,
+        not os.environ.get('GUNICORN_CMD_ARGS') and not os.environ.get('GUNICORN_WORKERS')
     ]):
-        logger.error("Development server detected. Use Gunicorn instead.")
+        logger.error("Development server detected or Gunicorn not found. Use Gunicorn to run this application.")
         sys.exit(1)
 
 verify_production_server()
