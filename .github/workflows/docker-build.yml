@@ -288,19 +288,16 @@ jobs:
         OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
         OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_PRIVATE_KEY }}
         OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+        SUPPRESS_LABEL_WARNING: True
       run: |
         # Install OCI CLI
         curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
         chmod +x install.sh
         ./install.sh --accept-all-defaults
         
-        # Add OCI CLI to path
-        echo "$HOME/lib/oracle-cli/bin" >> $GITHUB_PATH
-        
         # Configure OCI CLI
         mkdir -p ~/.oci
         echo "$OCI_CLI_KEY_CONTENT" > ~/.oci/oci_api_key.pem
-        # Add OCI_API_KEY line to suppress warning
         echo "OCI_API_KEY" >> ~/.oci/oci_api_key.pem
         chmod 600 ~/.oci/oci_api_key.pem
         
@@ -315,14 +312,14 @@ jobs:
         EOF
         chmod 600 ~/.oci/config
         
-        # Set environment variable to suppress warning
-        echo "SUPPRESS_LABEL_WARNING=True" >> $GITHUB_ENV
+        # Verify OCI CLI installation
+        /home/runner/bin/oci -v
         
-        # Generate kubeconfig
-        $HOME/lib/oracle-cli/bin/oci ce cluster create-kubeconfig \
-          --cluster-id ${{ secrets.OCI_CLUSTER_ID }} \
-          --file ${{ github.workspace }}/.kubeconfig \
-          --region ${{ secrets.OCI_REGION }} \
+        # Generate kubeconfig with explicit path to OCI CLI
+        /home/runner/bin/oci ce cluster create-kubeconfig \
+          --cluster-id "${{ secrets.OCI_CLUSTER_ID }}" \
+          --file "${{ github.workspace }}/.kubeconfig" \
+          --region "${{ secrets.OCI_REGION }}" \
           --token-version 2.0.0
 
     - name: Deploy to Kubernetes
