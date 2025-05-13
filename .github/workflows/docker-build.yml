@@ -281,54 +281,69 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install and configure OCI CLI
+      env:
+        OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+        OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+        OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+        OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_PRIVATE_KEY }}
+        OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
       run: |
         # Install OCI CLI
         curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
         chmod +x install.sh
         ./install.sh --accept-all-defaults
-        echo "$HOME/oracle-cli/bin" >> $GITHUB_PATH
+        
+        # Add OCI CLI to path
+        echo "$HOME/lib/oracle-cli/bin" >> $GITHUB_PATH
         
         # Configure OCI CLI
         mkdir -p ~/.oci
-        echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+        echo "$OCI_CLI_KEY_CONTENT" > ~/.oci/oci_api_key.pem
         chmod 600 ~/.oci/oci_api_key.pem
         
         # Create config file
         cat > ~/.oci/config << EOF
         [DEFAULT]
-        user=${{ secrets.OCI_CLI_USER }}
-        fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
-        tenancy=${{ secrets.OCI_CLI_TENANCY }}
-        region=${{ secrets.OCI_REGION }}
+        user=$OCI_CLI_USER
+        fingerprint=$OCI_CLI_FINGERPRINT
+        tenancy=$OCI_CLI_TENANCY
+        region=$OCI_CLI_REGION
         key_file=~/.oci/oci_api_key.pem
         EOF
         chmod 600 ~/.oci/config
-
-    - name: Configure kubectl
-      run: |
-        oci ce cluster create-kubeconfig \
+        
+        # Generate kubeconfig
+        $HOME/lib/oracle-cli/bin/oci ce cluster create-kubeconfig \
           --cluster-id ${{ secrets.OCI_CLUSTER_ID }} \
-          --file $HOME/.kube/config \
+          --file ${{ github.workspace }}/.kubeconfig \
           --region ${{ secrets.OCI_REGION }} \
           --token-version 2.0.0
-        chmod 600 $HOME/.kube/config
 
     - name: Deploy to Kubernetes
+      env:
+        KUBECONFIG: ${{ github.workspace }}/.kubeconfig
       run: |
-        # Create secrets
+        # Create secrets first
+        kubectl create secret docker-registry ghcr-secret \
+          --docker-server=ghcr.io \
+          --docker-username=${{ github.actor }} \
+          --docker-password=${{ secrets.GITHUB_TOKEN }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Link the secret to the default service account
+        kubectl patch serviceaccount default -p '{"imagePullSecrets": [{"name": "ghcr-secret"}]}'
+        
+        # Create application secrets
         kubectl create secret generic weatherservice-secrets \
           --from-literal=OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY }} \
           --from-literal=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
           --dry-run=client -o yaml | kubectl apply -f -
-
-        # Deploy API service
-        kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml
-
-        # Wait for deployments to be ready
-        kubectl rollout status deployment/weather-api
-        kubectl rollout status deployment/route-planner
-
-        # Get service information
+        
+        # Apply manifests and wait for rollout
+        kubectl apply -f k8s/
+        kubectl rollout status deployment/route-planner --timeout=2m
+        kubectl rollout status deployment/weather-api --timeout=2m
+        
+        # Display service information
         echo "Service endpoints:"
         kubectl get services -l app=weatherservice
