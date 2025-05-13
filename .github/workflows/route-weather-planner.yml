@@ -52,6 +52,7 @@ jobs:
         with:
           context: ./route-weather-planner
           push: ${{ github.event_name != 'pull_request' }}
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -85,3 +86,54 @@ jobs:
           
           # Wait for rollout to complete
           kubectl rollout status deployment/route-weather-planner 
+
+  test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Test route-weather-planner container
+        run: |
+          echo "Starting container..."
+          docker run -d -p 5000:5000 --name route-weather-planner ghcr.io/${{ github.repository }}/route-weather-planner:latest
+          
+          echo "Container started. Checking container status..."
+          docker ps
+          echo "Container logs (first 100 lines):"
+          docker logs route-weather-planner | head -n 100
+          
+          echo "Waiting for Gunicorn to be ready..."
+          for i in {1..30}; do
+            echo "Attempt $i to connect to Gunicorn..."
+            if curl -s http://localhost:5000/ > /dev/null; then
+              echo "Gunicorn is ready!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Gunicorn failed to start within timeout"
+              echo "Container logs:"
+              docker logs route-weather-planner
+              echo "Container status:"
+              docker ps -a
+              exit 1
+            fi
+            sleep 2
+          done
+          
+          # Test the route weather endpoint
+          echo "Testing route weather endpoint..."
+          TEST_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" -d '{"addresses":["New York, NY", "Boston, MA"], "interval_distance": 10}' http://localhost:5000/get_route_weather)
+          echo "Route weather endpoint response: $TEST_RESPONSE"
+          if [[ $TEST_RESPONSE != *"route"* ]]; then
+            echo "Route weather endpoint test failed"
+            echo "Container logs:"
+            docker logs route-weather-planner
+            exit 1
+          fi
+          
+          echo "All tests passed!"
+          echo "Cleaning up..."
+          docker stop route-weather-planner
+          docker rm route-weather-planner
+          echo "Cleanup complete" 
