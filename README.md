@@ -239,3 +239,166 @@ kubectl scale deployment weather-api --replicas=3
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Technologies Used
+
+### Container Technologies
+
+#### Docker
+- **Version**: Latest
+- **Purpose**: Application containerization
+- **Components**:
+  - Dockerfile for Weather API (.NET)
+  - Dockerfile for Route Planner (Python)
+- **Features Used**:
+  - Multi-stage builds for optimized images
+  - Environment variable injection
+  - Volume mounting for development
+  - Multi-architecture support (AMD64/ARM64)
+
+#### Kubernetes (OKE - Oracle Container Engine)
+- **Version**: Latest supported by OKE
+- **Features Used**:
+  - Deployments for rolling updates
+  - Services for load balancing
+  - Secrets management
+  - Health checks and probes
+  - Resource management
+  - Horizontal scaling
+  - Container registry integration
+
+### Cloud Services
+
+#### Oracle Cloud Infrastructure (OCI)
+- **Components Used**:
+  - Oracle Container Engine for Kubernetes (OKE)
+  - Virtual Cloud Network (VCN)
+  - Load Balancers
+  - Container Registry
+  - Identity and Access Management (IAM)
+- **Features**:
+  - High availability configuration
+  - Auto-scaling
+  - Regional deployment
+  - Secure network policies
+
+### External APIs
+
+#### Google Maps API
+- **Services Used**:
+  - Directions API
+  - Geocoding API
+  - Distance Matrix API
+- **Features**:
+  - Route calculation
+  - Address geocoding
+  - Distance and duration estimation
+  - Waypoint optimization
+
+#### OpenWeatherMap API
+- **Endpoints Used**:
+  - Current Weather Data
+  - 5 Day / 3 Hour Forecast
+  - Geocoding API
+- **Features**:
+  - Real-time weather data
+  - Temperature and conditions
+  - Location-based forecasts
+  - Coordinate-based queries
+
+### Development Tools
+
+#### GitHub Actions (CI/CD)
+- **Features Used**:
+  - Automated builds
+  - Multi-platform container builds
+  - Automated testing
+  - Deployment automation
+  - Secret management
+  - Environment management
+
+#### Development IDEs and Tools
+- **Visual Studio 2022**
+  - C# development
+  - Docker integration
+  - Kubernetes tools
+- **Visual Studio Code**
+  - Python development
+  - Remote container development
+  - Kubernetes extension
+  - Docker extension
+
+### Programming Languages and Frameworks
+
+#### C# / .NET 8.0
+- **Features Used**:
+  - ASP.NET Core Web API
+  - Dependency Injection
+  - Configuration Management
+  - HTTP Client Factory
+  - Memory Caching
+  - Health Checks
+  - Logging
+
+#### Python 3.12
+- **Frameworks**:
+  - Flask for REST API
+  - Gunicorn for WSGI server
+  - Requests for HTTP clients
+  - Python-dotenv for configuration
+  - Circuit breaker pattern implementation
+- **Features**:
+  - Async/await support
+  - Type hints
+  - Environment management
+  - Error handling
+
+### Networking
+
+#### Ingress and Load Balancing
+- **Components**:
+  - Kubernetes Services (LoadBalancer type)
+  - OCI Load Balancers
+  - Internal service discovery
+- **Features**:
+  - SSL/TLS termination
+  - Path-based routing
+  - Health monitoring
+  - Load distribution
+
+#### Security
+- **Implementations**:
+  - Container security
+  - Network policies
+  - Secret management
+  - API authentication
+  - HTTPS enforcement
+  - Rate limiting
+
+### Monitoring and Logging
+
+#### Application Monitoring
+- **Features**:
+  - Health check endpoints
+  - Kubernetes liveness probes
+  - Readiness probes
+  - Resource monitoring
+  - Performance metrics
+
+#### Logging
+- **Implementation**:
+  - Structured logging
+  - Container logs
+  - Kubernetes events
+  - Application-level logging
+  - Error tracking
+
+### Version Control
+
+#### Git
+- **Features Used**:
+  - Branch protection
+  - Pull request workflows
+  - Semantic versioning
+  - Automated tagging
+  - Release management
