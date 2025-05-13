@@ -8,6 +8,7 @@ import math
 import googlemaps
 import logging
 import polyline
+import sys
 
 load_dotenv()
 
@@ -367,5 +368,5 @@ def test_weather_connection():
         }), 500
 
 if __name__ == '__main__':
-    # This will only run when the script is executed directly, not when imported by Gunicorn
-    app.run(host='0.0.0.0', port=5000) 
+    print("Error: Do not run this application directly. Use Gunicorn instead.", file=sys.stderr)
+    sys.exit(1) 
