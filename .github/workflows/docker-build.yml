@@ -286,13 +286,13 @@ jobs:
         OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
         OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
         OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
-        OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_PRIVATE_KEY }}
+        OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
         OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
         SUPPRESS_LABEL_WARNING: True
       run: |
         # Debug: Check if required variables are set (without exposing values)
         echo "Checking required variables..."
-        for var in "OCI_CLI_USER" "OCI_CLI_TENANCY" "OCI_CLI_FINGERPRINT" "OCI_CLI_KEY_CONTENT" "OCI_CLI_REGION" "OCI_CLUSTER_ID"; do
+        for var in "OCI_CLI_USER" "OCI_CLI_TENANCY" "OCI_CLI_FINGERPRINT" "OCI_CLI_KEY_CONTENT" "OCI_CLI_REGION"; do
           if [ -z "${!var}" ]; then
             echo "Error: $var is not set"
             exit 1
