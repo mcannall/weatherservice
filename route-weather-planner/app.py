@@ -9,6 +9,7 @@ import math
 import googlemaps
 import logging
 import polyline
+from version import VERSION
 
 # Configure logging first
 logging.basicConfig(
@@ -193,7 +194,7 @@ def calculate_route_points(directions_result, interval_distance):
 
 @app.route('/')
 def index():
-    return render_template('index.html', google_maps_api_key=GOOGLE_MAPS_API_KEY)
+    return render_template('index.html', google_maps_api_key=GOOGLE_MAPS_API_KEY, version=VERSION)
 
 @app.route('/get_route_weather', methods=['POST'])
 def get_route_weather():

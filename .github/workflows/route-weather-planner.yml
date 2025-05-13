@@ -25,6 +25,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Update version
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "VERSION = '0.1.0-${SHORT_SHA}'" > route-weather-planner/version.py
+          cat route-weather-planner/version.py
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
