@@ -107,7 +107,7 @@ public class WeatherService
                     DateOnly.FromDateTime(DateTime.Now),
                     (int)response.Main.Temp,
                     response.Weather.FirstOrDefault()?.Description ?? "No description available"
-                );
+                ) { Country = "US" };
 
                 _logger.LogInformation("Successfully retrieved weather data for zip code: {ZipCode}", zipCode);
                 return forecast;
