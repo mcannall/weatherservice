@@ -16,6 +16,10 @@ on:
         required: false
         type: string
         default: 'us-chicago-1'
+      cluster_id:
+        description: 'OKE Cluster ID (leave empty to use secret)'
+        required: false
+        type: string
 
 jobs:
   test-oci-connectivity:
@@ -147,6 +151,38 @@ jobs:
           
           echo "✓ Successfully listed OCI resources"
       
+      - name: List Available OKE Clusters
+        if: ${{ github.event.inputs.run-oke-test == 'true' && success() }}
+        run: |
+          # Determine region to use
+          REGION="${{ github.event.inputs.region }}"
+          if [ -z "$REGION" ]; then
+            REGION="us-chicago-1"  # Default to Chicago region
+          fi
+          
+          echo "Listing available OKE clusters in region $REGION..."
+          /home/runner/bin/oci --debug ce cluster list --region $REGION
+          
+          # Find root compartment ID
+          echo "Finding root compartment ID..."
+          ROOT_COMPARTMENT_ID=$(/home/runner/bin/oci iam compartment list --all --compartment-id-in-subtree true --access-level ACCESSIBLE --include-root --query "data[?\"compartment-id\" == null].id | [0]" --raw-output --region $REGION)
+          echo "Root compartment ID: $ROOT_COMPARTMENT_ID"
+          
+          echo "Listing clusters in all compartments..."
+          COMPARTMENTS=$(/home/runner/bin/oci iam compartment list --compartment-id $ROOT_COMPARTMENT_ID --all --query "data[*].id" --raw-output --region $REGION)
+          
+          echo "List of compartments: $COMPARTMENTS"
+          
+          # List clusters in each compartment
+          for COMPARTMENT_ID in $COMPARTMENTS; do
+            echo "Listing clusters in compartment: $COMPARTMENT_ID"
+            /home/runner/bin/oci ce cluster list --compartment-id $COMPARTMENT_ID --region $REGION || echo "Failed to list clusters in this compartment"
+          done
+          
+          # Also check the root compartment
+          echo "Listing clusters in root compartment..."
+          /home/runner/bin/oci ce cluster list --compartment-id $ROOT_COMPARTMENT_ID --region $REGION || echo "Failed to list clusters in root compartment"
+      
       - name: Test OKE Kubernetes Connection
         if: ${{ github.event.inputs.run-oke-test == 'true' && success() }}
         run: |
@@ -158,10 +194,31 @@ jobs:
             REGION="us-chicago-1"  # Default to Chicago region
           fi
           
+          # Determine cluster ID to use
+          CLUSTER_ID="${{ github.event.inputs.cluster_id }}"
+          if [ -z "$CLUSTER_ID" ]; then
+            CLUSTER_ID="${{ secrets.OCI_CLUSTER_ID }}"
+            echo "Using cluster ID from secrets: ${CLUSTER_ID:0:8}... (truncated for security)"
+          else
+            echo "Using cluster ID from input: ${CLUSTER_ID:0:8}... (truncated for security)"
+          fi
+          
+          # Verify that the cluster ID exists
+          echo "Verifying cluster ID..."
+          CLUSTER_EXISTS=$(/home/runner/bin/oci ce cluster get --cluster-id "$CLUSTER_ID" --region $REGION 2>/dev/null || echo "CLUSTER_NOT_FOUND")
+          
+          if [[ "$CLUSTER_EXISTS" == "CLUSTER_NOT_FOUND" ]]; then
+            echo "Error: Cluster with ID ${CLUSTER_ID:0:8}... not found"
+            echo "Please check the OCI_CLUSTER_ID secret or provide a valid cluster ID in the workflow input"
+            exit 1
+          fi
+          
+          echo "Cluster found! Generating kubeconfig..."
+          
           # Generate kubeconfig
           mkdir -p $HOME/.kube
           /home/runner/bin/oci ce cluster create-kubeconfig \
-            --cluster-id ${{ secrets.OCI_CLUSTER_ID }} \
+            --cluster-id "$CLUSTER_ID" \
             --file $HOME/.kube/config \
             --region $REGION \
             --token-version 2.0.0
