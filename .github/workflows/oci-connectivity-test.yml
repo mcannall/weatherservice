@@ -11,6 +11,11 @@ on:
         description: 'Test OKE Kubernetes connection'
         type: boolean
         default: true
+      region:
+        description: 'Oracle Cloud Region (default: us-chicago-1)'
+        required: false
+        type: string
+        default: 'us-chicago-1'
 
 jobs:
   test-oci-connectivity:
@@ -46,6 +51,13 @@ jobs:
           # Add OCI_API_KEY label to suppress warning
           echo "OCI_API_KEY" >> ~/.oci/oci_api_key.pem
           
+          # Determine region to use
+          REGION="${{ github.event.inputs.region }}"
+          if [ -z "$REGION" ]; then
+            REGION="us-chicago-1"  # Default to Chicago region
+          fi
+          echo "Using region: $REGION"
+          
           # Create config file
           echo "Creating config file..."
           cat > ~/.oci/config << EOF
@@ -53,7 +65,7 @@ jobs:
           user=${{ secrets.OCI_CLI_USER }}
           fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
           tenancy=${{ secrets.OCI_CLI_TENANCY }}
-          region=${{ secrets.OCI_REGION }}
+          region=$REGION
           key_file=~/.oci/oci_api_key.pem
           EOF
           chmod 600 ~/.oci/config
@@ -62,17 +74,38 @@ jobs:
           echo "Verifying config files exist:"
           ls -la ~/.oci/
           
+          # Print config file (redacting sensitive info)
+          echo "Config file contents (redacted):"
+          cat ~/.oci/config | sed 's/user=.*/user=<REDACTED>/g' | sed 's/fingerprint=.*/fingerprint=<REDACTED>/g' | sed 's/tenancy=.*/tenancy=<REDACTED>/g'
+          
           # Verify file permissions
           /home/runner/bin/oci setup repair-file-permissions --file ~/.oci/config
           /home/runner/bin/oci setup repair-file-permissions --file ~/.oci/oci_api_key.pem
           
           # Display OCI region
-          echo "OCI Region set to: ${{ secrets.OCI_REGION }}"
+          echo "OCI Region set to: $REGION"
           
-          # Test connectivity with ping
-          echo "Testing network connectivity to Oracle Cloud..."
-          ping -c 4 ${{ secrets.OCI_REGION }}.oraclecloud.com || echo "Ping failed, but this might be expected"
+          # Test DNS resolution for region endpoint
+          echo "Testing DNS resolution for region endpoint..."
+          host identity.$REGION.oraclecloud.com || echo "DNS resolution failed - check region name format"
+          
+          # Try common regions for DNS testing to validate connectivity
+          echo "Testing DNS resolution for known Oracle Cloud regions..."
+          echo "US East (Ashburn):"
+          host identity.us-ashburn-1.oraclecloud.com || echo "Failed to resolve US East region"
+          echo "US West (Phoenix):"
+          host identity.us-phoenix-1.oraclecloud.com || echo "Failed to resolve US West region"
 
+      - name: Test OCI Connectivity without Specific Region
+        run: |
+          echo "Testing basic OCI connectivity with global endpoint..."
+          
+          # Suppress the label warning
+          export SUPPRESS_LABEL_WARNING=True
+          
+          # Try connecting to a global endpoint that doesn't require region
+          /home/runner/bin/oci --debug iam region list
+          
       - name: Test OCI Connectivity with Debug Mode
         run: |
           echo "Testing basic OCI connectivity with debug mode..."
@@ -81,20 +114,33 @@ jobs:
           # Suppress the label warning
           export SUPPRESS_LABEL_WARNING=True
           
-          # Try a simple command first with debug mode
+          # Determine region to use
+          REGION="${{ github.event.inputs.region }}"
+          if [ -z "$REGION" ]; then
+            REGION="us-chicago-1"  # Default to Chicago region
+          fi
+          
+          # Try a simple command first
+          echo "Testing region list command..."
           /home/runner/bin/oci --debug iam region list
           
-          # Now try the availability domain command
+          # Try availability domain command
           echo "Testing availability domain listing..."
-          /home/runner/bin/oci --debug iam availability-domain list
+          /home/runner/bin/oci --debug iam availability-domain list --region $REGION
           echo "✓ Successfully connected to OCI and listed availability domains"
       
       - name: List OCI Resources
         if: ${{ github.event.inputs.run-oracle-list-cmd == 'true' && success() }}
         run: |
           echo "Listing OCI resources..."
+          # Determine region to use
+          REGION="${{ github.event.inputs.region }}"
+          if [ -z "$REGION" ]; then
+            REGION="us-chicago-1"  # Default to Chicago region
+          fi
+          
           echo "Compartments:"
-          /home/runner/bin/oci iam compartment list
+          /home/runner/bin/oci iam compartment list --region $REGION
           
           echo "Regions:"
           /home/runner/bin/oci iam region list
@@ -106,12 +152,18 @@ jobs:
         run: |
           echo "Testing OKE Kubernetes connection..."
           
+          # Determine region to use
+          REGION="${{ github.event.inputs.region }}"
+          if [ -z "$REGION" ]; then
+            REGION="us-chicago-1"  # Default to Chicago region
+          fi
+          
           # Generate kubeconfig
           mkdir -p $HOME/.kube
           /home/runner/bin/oci ce cluster create-kubeconfig \
             --cluster-id ${{ secrets.OCI_CLUSTER_ID }} \
             --file $HOME/.kube/config \
-            --region ${{ secrets.OCI_REGION }} \
+            --region $REGION \
             --token-version 2.0.0
           
           chmod 600 $HOME/.kube/config
