@@ -1,5 +1,6 @@
 # Kubernetes deployment manifest for Weather Service
 # Updated for Oracle Cloud Infrastructure (OCI) Kubernetes Engine deployment
+# Last updated: 2025-05-14 - Optimized for OCI Free Tier
 apiVersion: apps/v1
 kind: Deployment
 metadata:
