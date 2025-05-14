@@ -281,19 +281,33 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install and configure OCI CLI
+    - name: Install OCI CLI
+      run: |
+        echo "Installing OCI CLI..."
+        curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
+        chmod +x install.sh
+        ./install.sh --accept-all-defaults
+        
+        # Add OCI CLI to PATH
+        echo "/home/runner/bin" >> $GITHUB_PATH
+        
+        # Verify installation
+        echo "OCI CLI version:"
+        /home/runner/bin/oci -v
+    
+    - name: Configure OCI CLI
       env:
         OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
         OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
         OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
-        OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
-        OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+        OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+        OCI_REGION: ${{ secrets.OCI_REGION || 'us-chicago-1' }}
         OCI_CLUSTER_ID: ${{ secrets.OCI_CLUSTER_ID }}
         SUPPRESS_LABEL_WARNING: True
       run: |
         # Debug: Check if required variables are set (without exposing values)
         echo "Checking required variables..."
-        for var in "OCI_CLI_USER" "OCI_CLI_TENANCY" "OCI_CLI_FINGERPRINT" "OCI_CLI_KEY_CONTENT" "OCI_CLI_REGION" "OCI_CLUSTER_ID"; do
+        for var in "OCI_CLI_USER" "OCI_CLI_TENANCY" "OCI_CLI_FINGERPRINT" "OCI_PRIVATE_KEY" "OCI_CLUSTER_ID"; do
           if [ -z "${!var}" ]; then
             echo "Error: $var is not set"
             exit 1
@@ -302,42 +316,79 @@ jobs:
           fi
         done
         
-        # Install OCI CLI
-        curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
-        chmod +x install.sh
-        ./install.sh --accept-all-defaults
+        # Set default region if not provided
+        if [ -z "$OCI_REGION" ]; then
+          OCI_REGION="us-chicago-1"  # Default to Chicago region
+        fi
+        echo "Using region: $OCI_REGION"
         
         # Configure OCI CLI
+        echo "Configuring OCI CLI..."
         mkdir -p ~/.oci
-        echo "$OCI_CLI_KEY_CONTENT" > ~/.oci/oci_api_key.pem
-        echo "OCI_API_KEY" >> ~/.oci/oci_api_key.pem
+        
+        # Create private key file
+        echo "Creating private key file..."
+        echo "$OCI_PRIVATE_KEY" > ~/.oci/oci_api_key.pem
         chmod 600 ~/.oci/oci_api_key.pem
         
+        # Add OCI_API_KEY label to suppress warning
+        echo "OCI_API_KEY" >> ~/.oci/oci_api_key.pem
+        
         # Create config file
+        echo "Creating config file..."
         cat > ~/.oci/config << EOF
         [DEFAULT]
         user=$OCI_CLI_USER
         fingerprint=$OCI_CLI_FINGERPRINT
         tenancy=$OCI_CLI_TENANCY
-        region=$OCI_CLI_REGION
+        region=$OCI_REGION
         key_file=~/.oci/oci_api_key.pem
         EOF
         chmod 600 ~/.oci/config
         
-        # Verify OCI CLI installation
-        echo "OCI CLI version:"
-        /home/runner/bin/oci -v
+        # Verify files exist
+        echo "Verifying config files exist:"
+        ls -la ~/.oci/
+        
+        # Verify file permissions
+        /home/runner/bin/oci setup repair-file-permissions --file ~/.oci/config
+        /home/runner/bin/oci setup repair-file-permissions --file ~/.oci/oci_api_key.pem
+        
+        # Test DNS resolution for region endpoint
+        echo "Testing DNS resolution for region endpoint..."
+        host identity.$OCI_REGION.oraclecloud.com || echo "DNS resolution failed - check region name format"
+
+    - name: Verify Cluster ID and Generate Kubeconfig
+      env:
+        OCI_CLUSTER_ID: ${{ secrets.OCI_CLUSTER_ID }}
+        OCI_REGION: ${{ secrets.OCI_REGION || 'us-chicago-1' }}
+        SUPPRESS_LABEL_WARNING: True
+      run: |
+        # Set timeout environment variable
+        export OCI_CLI_CALL_TIMEOUT=300
+        
+        # Set default region if not provided
+        if [ -z "$OCI_REGION" ]; then
+          OCI_REGION="us-chicago-1"  # Default to Chicago region
+        fi
         
         # Debug: Verify cluster ID
-        echo "Cluster ID: ${OCI_CLUSTER_ID}"
-        echo "Region: ${OCI_CLI_REGION}"
+        echo "Cluster ID: ${OCI_CLUSTER_ID:0:12}... (truncated for security)"
+        echo "Region: $OCI_REGION"
+        
+        # Verify the cluster exists
+        echo "Verifying cluster ID..."
+        /home/runner/bin/oci ce cluster get --cluster-id "$OCI_CLUSTER_ID" --region $OCI_REGION || {
+          echo "Error: Cluster with ID ${OCI_CLUSTER_ID:0:12}... not found or you don't have permission to access it."
+          exit 1
+        }
         
         # Generate kubeconfig with explicit path to OCI CLI
         echo "Generating kubeconfig..."
         /home/runner/bin/oci ce cluster create-kubeconfig \
-          --cluster-id "${OCI_CLUSTER_ID}" \
+          --cluster-id "$OCI_CLUSTER_ID" \
           --file "${{ github.workspace }}/.kubeconfig" \
-          --region "${OCI_CLI_REGION}" \
+          --region "$OCI_REGION" \
           --token-version 2.0.0
 
     - name: Deploy to Kubernetes
