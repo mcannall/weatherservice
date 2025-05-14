@@ -301,7 +301,6 @@ jobs:
         OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
         OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
         OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-        OCI_REGION: ${{ secrets.OCI_REGION || 'us-chicago-1' }}
         OCI_CLUSTER_ID: ${{ secrets.OCI_CLUSTER_ID }}
         SUPPRESS_LABEL_WARNING: True
       run: |
@@ -316,10 +315,8 @@ jobs:
           fi
         done
         
-        # Set default region if not provided
-        if [ -z "$OCI_REGION" ]; then
-          OCI_REGION="us-chicago-1"  # Default to Chicago region
-        fi
+        # Always use Chicago region for free tier
+        OCI_REGION="us-chicago-1"
         echo "Using region: $OCI_REGION"
         
         # Configure OCI CLI
@@ -361,16 +358,14 @@ jobs:
     - name: Verify Cluster ID and Generate Kubeconfig
       env:
         OCI_CLUSTER_ID: ${{ secrets.OCI_CLUSTER_ID }}
-        OCI_REGION: ${{ secrets.OCI_REGION || 'us-chicago-1' }}
         SUPPRESS_LABEL_WARNING: True
       run: |
         # Set timeout environment variable
         export OCI_CLI_CALL_TIMEOUT=300
         
-        # Set default region if not provided
-        if [ -z "$OCI_REGION" ]; then
-          OCI_REGION="us-chicago-1"  # Default to Chicago region
-        fi
+        # Always use Chicago region for free tier
+        OCI_REGION="us-chicago-1"
+        echo "Using region: $OCI_REGION"
         
         # Debug: Verify cluster ID
         echo "Cluster ID: ${OCI_CLUSTER_ID:0:12}... (truncated for security)"
