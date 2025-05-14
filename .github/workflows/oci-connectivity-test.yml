@@ -20,6 +20,10 @@ on:
         description: 'OKE Cluster ID (leave empty to use secret)'
         required: false
         type: string
+      compartment_id:
+        description: 'Compartment ID (leave empty to use tenancy)'
+        required: false
+        type: string
 
 jobs:
   test-oci-connectivity:
@@ -160,28 +164,26 @@ jobs:
             REGION="us-chicago-1"  # Default to Chicago region
           fi
           
-          echo "Listing available OKE clusters in region $REGION..."
-          /home/runner/bin/oci --debug ce cluster list --region $REGION
+          # Get tenancy ID to use as default compartment
+          TENANCY_ID="${{ secrets.OCI_CLI_TENANCY }}"
+          echo "Using tenancy as root compartment: ${TENANCY_ID:0:12}... (truncated for security)"
           
-          # Find root compartment ID
-          echo "Finding root compartment ID..."
-          ROOT_COMPARTMENT_ID=$(/home/runner/bin/oci iam compartment list --all --compartment-id-in-subtree true --access-level ACCESSIBLE --include-root --query "data[?\"compartment-id\" == null].id | [0]" --raw-output --region $REGION)
-          echo "Root compartment ID: $ROOT_COMPARTMENT_ID"
+          # Use compartment ID from input or default to tenancy
+          COMPARTMENT_ID="${{ github.event.inputs.compartment_id }}"
+          if [ -z "$COMPARTMENT_ID" ]; then
+            COMPARTMENT_ID="$TENANCY_ID"
+          fi
           
-          echo "Listing clusters in all compartments..."
-          COMPARTMENTS=$(/home/runner/bin/oci iam compartment list --compartment-id $ROOT_COMPARTMENT_ID --all --query "data[*].id" --raw-output --region $REGION)
+          echo "Listing available OKE clusters in region $REGION, compartment $COMPARTMENT_ID..."
+          /home/runner/bin/oci ce cluster list --compartment-id "$COMPARTMENT_ID" --region $REGION
           
-          echo "List of compartments: $COMPARTMENTS"
+          # Get my user details (for troubleshooting)
+          echo "Getting user information..."
+          /home/runner/bin/oci iam user get --user-id "${{ secrets.OCI_CLI_USER }}" --region $REGION || echo "Failed to get user info"
           
-          # List clusters in each compartment
-          for COMPARTMENT_ID in $COMPARTMENTS; do
-            echo "Listing clusters in compartment: $COMPARTMENT_ID"
-            /home/runner/bin/oci ce cluster list --compartment-id $COMPARTMENT_ID --region $REGION || echo "Failed to list clusters in this compartment"
-          done
-          
-          # Also check the root compartment
-          echo "Listing clusters in root compartment..."
-          /home/runner/bin/oci ce cluster list --compartment-id $ROOT_COMPARTMENT_ID --region $REGION || echo "Failed to list clusters in root compartment"
+          # Check permissions
+          echo "Checking compartment access and policies..."
+          /home/runner/bin/oci iam policy list --compartment-id "$COMPARTMENT_ID" --region $REGION || echo "Failed to list policies"
       
       - name: Test OKE Kubernetes Connection
         if: ${{ github.event.inputs.run-oke-test == 'true' && success() }}
@@ -198,19 +200,28 @@ jobs:
           CLUSTER_ID="${{ github.event.inputs.cluster_id }}"
           if [ -z "$CLUSTER_ID" ]; then
             CLUSTER_ID="${{ secrets.OCI_CLUSTER_ID }}"
+            if [ -z "$CLUSTER_ID" ]; then
+              echo "Error: No cluster ID provided in input or secrets"
+              echo "Please set the OCI_CLUSTER_ID secret or provide a cluster ID in the workflow input"
+              exit 1
+            fi
             echo "Using cluster ID from secrets: ${CLUSTER_ID:0:8}... (truncated for security)"
           else
             echo "Using cluster ID from input: ${CLUSTER_ID:0:8}... (truncated for security)"
           fi
           
-          # Verify that the cluster ID exists
-          echo "Verifying cluster ID..."
-          CLUSTER_EXISTS=$(/home/runner/bin/oci ce cluster get --cluster-id "$CLUSTER_ID" --region $REGION 2>/dev/null || echo "CLUSTER_NOT_FOUND")
+          # Get tenancy ID to use as default compartment
+          TENANCY_ID="${{ secrets.OCI_CLI_TENANCY }}"
           
-          if [[ "$CLUSTER_EXISTS" == "CLUSTER_NOT_FOUND" ]]; then
-            echo "Error: Cluster with ID ${CLUSTER_ID:0:8}... not found"
-            echo "Please check the OCI_CLUSTER_ID secret or provide a valid cluster ID in the workflow input"
-            exit 1
+          # Verify that the cluster ID exists if safe to do so
+          if [ -n "$CLUSTER_ID" ]; then
+            echo "Verifying cluster ID..."
+            /home/runner/bin/oci ce cluster get --cluster-id "$CLUSTER_ID" --region $REGION || {
+              echo "Error: Cluster with ID ${CLUSTER_ID:0:8}... not found or you don't have permission to access it."
+              echo "Please check the OCI_CLUSTER_ID secret or provide a valid cluster ID in the workflow input"
+              echo "If you have no clusters yet, you may need to create one in your OCI account first."
+              exit 1
+            }
           fi
           
           echo "Cluster found! Generating kubeconfig..."
