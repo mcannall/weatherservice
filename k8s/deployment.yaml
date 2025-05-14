@@ -57,8 +57,6 @@ spec:
         app: weatherservice
         component: route-planner
     spec:
-      nodeSelector:
-        kubernetes.io/arch: amd64
       imagePullSecrets:
       - name: ghcr-secret
       containers:
@@ -68,15 +66,23 @@ spec:
         command:
         - gunicorn
         args:
-        - --workers=4
+        - --workers=2
         - --bind=0.0.0.0:5000
         - --access-logfile=-
         - --error-logfile=-
         - --log-level=info
+        - --timeout=120
         - --preload
         - wsgi:app
         ports:
         - containerPort: 5000
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "300m"
         env:
         - name: GOOGLE_MAPS_API_KEY
           valueFrom:
