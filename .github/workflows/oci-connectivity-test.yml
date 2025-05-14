@@ -1,0 +1,89 @@
+name: Test Oracle Cloud Connectivity
+
+on:
+  workflow_dispatch:
+    inputs:
+      run-oracle-list-cmd:
+        description: 'Run Oracle list command'
+        type: boolean
+        default: true
+      run-oke-test:
+        description: 'Test OKE Kubernetes connection'
+        type: boolean
+        default: true
+
+jobs:
+  test-oci-connectivity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install OCI CLI
+        run: |
+          echo "Installing OCI CLI..."
+          curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
+          chmod +x install.sh
+          ./install.sh --accept-all-defaults
+          echo "$HOME/oracle-cli/bin" >> $GITHUB_PATH
+          
+      - name: Configure OCI CLI
+        run: |
+          echo "Configuring OCI CLI..."
+          mkdir -p ~/.oci
+          
+          # Create private key file
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          
+          # Create config file
+          cat > ~/.oci/config << EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CLI_USER }}
+          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_CLI_TENANCY }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=~/.oci/oci_api_key.pem
+          EOF
+          chmod 600 ~/.oci/config
+          
+          # Verify file permissions
+          oci setup repair-file-permissions --file ~/.oci/config
+          oci setup repair-file-permissions --file ~/.oci/oci_api_key.pem
+
+      - name: Test OCI Connectivity
+        run: |
+          echo "Testing basic OCI connectivity..."
+          oci iam availability-domain list
+          echo "✓ Successfully connected to OCI and listed availability domains"
+      
+      - name: List OCI Resources
+        if: ${{ github.event.inputs.run-oracle-list-cmd == 'true' }}
+        run: |
+          echo "Listing OCI resources..."
+          echo "Compartments:"
+          oci iam compartment list
+          
+          echo "Regions:"
+          oci iam region list
+          
+          echo "✓ Successfully listed OCI resources"
+      
+      - name: Test OKE Kubernetes Connection
+        if: ${{ github.event.inputs.run-oke-test == 'true' }}
+        run: |
+          echo "Testing OKE Kubernetes connection..."
+          
+          # Generate kubeconfig
+          mkdir -p $HOME/.kube
+          oci ce cluster create-kubeconfig \
+            --cluster-id ${{ secrets.OCI_CLUSTER_ID }} \
+            --file $HOME/.kube/config \
+            --region ${{ secrets.OCI_REGION }} \
+            --token-version 2.0.0
+          
+          chmod 600 $HOME/.kube/config
+          
+          # Verify connection
+          kubectl get nodes
+          echo "✓ Successfully connected to OKE Kubernetes cluster" 

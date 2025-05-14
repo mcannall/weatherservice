@@ -112,6 +112,17 @@ GOOGLE_MAPS_API_KEY=your_api_key
 3. GitHub Account with repository access
 4. Kubernetes cluster created in OCI
 
+### Testing Oracle Cloud Connectivity
+
+To verify your GitHub Actions integration with Oracle Cloud, you can use the test workflow provided:
+
+1. Make sure all required OCI secrets are configured (see below)
+2. Go to the Actions tab in your repository
+3. Run the "Test Oracle Cloud Connectivity" workflow
+4. Check the results to ensure authentication works properly
+
+For detailed instructions, see [Oracle Cloud Connection Test](docs/oci-connection-test.md).
+
 ### Required Secrets
 
 Set up the following secrets in your GitHub repository:
@@ -210,15 +221,154 @@ GITHUB_TOKEN: your_github_pat
 
 ### Logs
 
-```bash
-# View Weather API logs
-kubectl logs -l app=weatherservice,component=api
+#### Accessing Logs
 
-# View Route Planner logs
-kubectl logs -l app=weatherservice,component=route-planner
-```
+#### Local Development Logs
 
-### Scaling
+1. **Docker Container Logs**:
+   ```bash
+   # Follow logs for Weather API container
+   docker logs -f weatherservice
+
+   # Follow logs for Route Planner container
+   docker logs -f route-planner
+
+   # Get last 100 lines of logs
+   docker logs --tail=100 weatherservice
+   ```
+
+2. **Local Development Server Logs**:
+   - Weather API (.NET):
+     ```bash
+     # Logs are written to console and debug output
+     dotnet run
+     ```
+   - Route Planner (Flask):
+     ```bash
+     # Development server logs
+     python app.py
+     ```
+
+#### Production Logs (Oracle Cloud Kubernetes)
+
+1. **Pod Logs**:
+   ```bash
+   # Get logs from Weather API pods
+   kubectl logs -l app=weatherservice,component=api --tail=50 --follow
+
+   # Get logs from Route Planner pods
+   kubectl logs -l app=weatherservice,component=route-planner --tail=50 --follow
+
+   # Get logs from a specific pod
+   kubectl logs <pod-name> --tail=50 --follow
+   ```
+
+2. **Application-Specific Logs**:
+   - Weather API Service:
+     ```bash
+     # Get logs with specific log level
+     kubectl logs -l component=api --tail=100 | grep "ERROR"
+     kubectl logs -l component=api --tail=100 | grep "WARNING"
+     ```
+   - Route Planner Service:
+     ```bash
+     # Access Gunicorn access logs
+     kubectl logs -l component=route-planner | grep "GET\|POST"
+
+     # Access Gunicorn error logs
+     kubectl logs -l component=route-planner | grep "ERROR"
+     ```
+
+3. **Previous Container Logs**:
+   ```bash
+   # If a container has restarted, get previous container logs
+   kubectl logs <pod-name> --previous
+   ```
+
+### Log Types and Formats
+
+1. **Weather API Logs**:
+   - Format: JSON structured logging
+   - Fields:
+     ```json
+     {
+       "timestamp": "2025-05-12T04:12:04.123Z",
+       "level": "Information",
+       "message": "Request processed",
+       "endpoint": "/weather/48045",
+       "duration_ms": 123,
+       "status_code": 200
+     }
+     ```
+
+2. **Route Planner Logs**:
+   - Gunicorn Access Logs:
+     ```
+     172.19.0.1 - - [12/May/2025 04:12:04] "GET / HTTP/1.1" 200 -
+     ```
+   - Application Logs:
+     ```
+     [2025-05-12 04:12:04,123] INFO: Route calculation completed
+     ```
+
+### Log Retention and Management
+
+1. **Container Runtime**:
+   - Docker: Logs retained until container removal
+   - Command to clear logs:
+     ```bash
+     docker system prune
+     ```
+
+2. **Kubernetes**:
+   - Default retention: Based on container runtime configuration
+   - Pod logs persist until pod deletion
+   - Previous container logs available for debugging
+
+### Monitoring Log Output
+
+1. **Real-time Monitoring**:
+   ```bash
+   # Watch for errors in all services
+   kubectl logs -l app=weatherservice --all-containers --tail=1 -f | grep "ERROR"
+   ```
+
+2. **Health Check Logs**:
+   ```bash
+   # Monitor health check endpoints
+   kubectl logs -l app=weatherservice --tail=50 | grep "health"
+   ```
+
+### Log Analysis Tips
+
+1. **Common Debugging Patterns**:
+   ```bash
+   # Find failed requests
+   kubectl logs -l app=weatherservice | grep "status_code=5"
+
+   # Track API latency
+   kubectl logs -l component=api | grep "duration_ms" | sort -n -k2
+   ```
+
+2. **Performance Analysis**:
+   ```bash
+   # Monitor route calculation times
+   kubectl logs -l component=route-planner | grep "calculation_time"
+
+   # Track weather API response times
+   kubectl logs -l component=api | grep "api_response_time"
+   ```
+
+### Log Aggregation
+
+For production environments, logs are:
+- Written to stdout/stderr (container standard)
+- Collected by Kubernetes
+- Accessible via kubectl
+- Retained based on pod lifecycle
+- Available for external log aggregation systems
+
+## Scaling
 
 ```bash
 # Scale route planner service
