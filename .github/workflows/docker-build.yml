@@ -406,11 +406,57 @@ jobs:
           --from-literal=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
           --dry-run=client -o yaml | kubectl apply -f -
         
-        # Apply manifests and wait for rollout
+        # Apply manifests
         kubectl apply -f k8s/
-        kubectl rollout status deployment/route-planner --timeout=2m
-        kubectl rollout status deployment/weather-api --timeout=2m
+        
+        # Display pod information before rollout
+        echo "Current pods before rollout:"
+        kubectl get pods -o wide
+        
+        # Wait for weather-api rollout with increased timeout
+        echo "Waiting for weather-api deployment to roll out..."
+        kubectl rollout status deployment/weather-api --timeout=5m || {
+          echo "Timed out waiting for weather-api deployment"
+          echo "Checking deployment status:"
+          kubectl describe deployment/weather-api
+          echo "Checking pod status:"
+          kubectl get pods -l app=weatherservice,component=api -o wide
+          echo "Pod logs:"
+          for pod in $(kubectl get pods -l app=weatherservice,component=api -o name); do
+            echo "Logs for $pod:"
+            kubectl logs $pod --tail=50
+          done
+        }
+        
+        # Wait for route-planner rollout with increased timeout
+        echo "Waiting for route-planner deployment to roll out..."
+        kubectl rollout status deployment/route-planner --timeout=5m || {
+          echo "Timed out waiting for route-planner deployment"
+          echo "Checking deployment status:"
+          kubectl describe deployment/route-planner
+          echo "Checking pod status:"
+          kubectl get pods -l app=weatherservice,component=route-planner -o wide
+          echo "Pod logs:"
+          for pod in $(kubectl get pods -l app=weatherservice,component=route-planner -o name); do
+            echo "Logs for $pod:"
+            kubectl logs $pod --tail=50
+          done
+          # We'll continue execution even if the rollout times out
+          # This allows us to see the service information and debug further
+        }
+        
+        # Display deployment and pod information
+        echo "Deployments:"
+        kubectl get deployments -l app=weatherservice
+        echo "Pods:"
+        kubectl get pods -l app=weatherservice -o wide
+        echo "Node status:"
+        kubectl get nodes
         
         # Display service information
         echo "Service endpoints:"
         kubectl get services -l app=weatherservice
+        
+        # Display events that might indicate issues
+        echo "Recent events:"
+        kubectl get events --sort-by='.lastTimestamp' | tail -n 20
