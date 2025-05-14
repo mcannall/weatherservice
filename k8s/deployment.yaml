@@ -1,3 +1,5 @@
+# Kubernetes deployment manifest for Weather Service
+# Updated for Oracle Cloud Infrastructure (OCI) Kubernetes Engine deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,6 +35,8 @@ spec:
               key: OPENWEATHERMAP_API_KEY
         - name: OpenWeatherMap__BaseUrl
           value: "https://api.openweathermap.org/data/2.5"
+      imagePullSecrets:
+      - name: ghcr-secret
 ---
 apiVersion: apps/v1
 kind: Deployment
