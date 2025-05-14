@@ -243,9 +243,23 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Test route-weather-planner container
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: |
+          # Verify the Google Maps API key is available
+          if [ -z "$GOOGLE_MAPS_API_KEY" ]; then
+            echo "Error: GOOGLE_MAPS_API_KEY is not set in GitHub secrets"
+            echo "Please add this secret to your repository"
+            exit 1
+          else
+            echo "Google Maps API key is available (first 4 chars): ${GOOGLE_MAPS_API_KEY:0:4}..."
+          fi
+          
           echo "Starting container..."
-          docker run -d -p 5000:5000 --name route-weather-planner ghcr.io/${{ github.repository }}/route-weather-planner:latest
+          docker run -d -p 5000:5000 \
+            -e GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY \
+            --name route-weather-planner \
+            ghcr.io/${{ github.repository }}/route-weather-planner:latest
           echo "Container started. Checking container status..."
           docker ps
           echo "Container logs (first 100 lines):"
