@@ -25,7 +25,13 @@ jobs:
           curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
           chmod +x install.sh
           ./install.sh --accept-all-defaults
-          echo "$HOME/oracle-cli/bin" >> $GITHUB_PATH
+          
+          # Add OCI CLI to PATH
+          echo "/home/runner/bin" >> $GITHUB_PATH
+          
+          # Verify installation
+          echo "OCI CLI version:"
+          /home/runner/bin/oci -v
           
       - name: Configure OCI CLI
         run: |
@@ -48,13 +54,13 @@ jobs:
           chmod 600 ~/.oci/config
           
           # Verify file permissions
-          oci setup repair-file-permissions --file ~/.oci/config
-          oci setup repair-file-permissions --file ~/.oci/oci_api_key.pem
+          /home/runner/bin/oci setup repair-file-permissions --file ~/.oci/config
+          /home/runner/bin/oci setup repair-file-permissions --file ~/.oci/oci_api_key.pem
 
       - name: Test OCI Connectivity
         run: |
           echo "Testing basic OCI connectivity..."
-          oci iam availability-domain list
+          /home/runner/bin/oci iam availability-domain list
           echo "✓ Successfully connected to OCI and listed availability domains"
       
       - name: List OCI Resources
@@ -62,10 +68,10 @@ jobs:
         run: |
           echo "Listing OCI resources..."
           echo "Compartments:"
-          oci iam compartment list
+          /home/runner/bin/oci iam compartment list
           
           echo "Regions:"
-          oci iam region list
+          /home/runner/bin/oci iam region list
           
           echo "✓ Successfully listed OCI resources"
       
@@ -76,7 +82,7 @@ jobs:
           
           # Generate kubeconfig
           mkdir -p $HOME/.kube
-          oci ce cluster create-kubeconfig \
+          /home/runner/bin/oci ce cluster create-kubeconfig \
             --cluster-id ${{ secrets.OCI_CLUSTER_ID }} \
             --file $HOME/.kube/config \
             --region ${{ secrets.OCI_REGION }} \
