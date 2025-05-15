@@ -674,16 +674,13 @@ if (-not $simulationMode) {
         Write-ColorOutput ">> Failed to start port forwarding." "Red"
         Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
         $simulationMode = $true
+    } else {
+        Write-ColorOutput ">> Port forwarding established successfully!" "Green"
+        # Give it a moment to fully stabilize (increased wait time)
+        Write-ColorOutput ">> Waiting for ports to stabilize..." "Cyan"
+        Start-Sleep -Seconds 3
     }
 }
-
-Write-ColorOutput ">> Port forwarding established successfully!" "Green"
-Start-Sleep -Seconds 2  # Give it a moment to stabilize
-
-# Open browser to the route planner UI
-$routePlannerUrl = "http://localhost:30081"
-Write-ColorOutput ">> Opening route planner in your browser: $routePlannerUrl" "Cyan"
-Start-Process $routePlannerUrl
 
 # Demo the API
 Write-ColorOutput "`n>> Demonstrating the Weather Service API..." "Magenta"
@@ -788,12 +785,39 @@ if (-not $simulationMode) {
         $simulationMode = $true
     } else {
         Write-ColorOutput ">> Port forwarding established successfully!" "Green"
-        Start-Sleep -Seconds 2  # Give it a moment to stabilize
+        # Give it a moment to fully stabilize (increased wait time)
+        Write-ColorOutput ">> Waiting for port to stabilize..." "Cyan"
+        Start-Sleep -Seconds 3
+        
+        # Verify the port is ready before opening the browser
+        $portReady = $false
+        $retryCount = 0
+        $maxRetries = 5
+        
+        while (-not $portReady -and $retryCount -lt $maxRetries) {
+            try {
+                # Make a simple GET request to verify the service is responding
+                $statusCheck = Invoke-WebRequest -Uri "http://localhost:30081/" -Method Head -TimeoutSec 1 -ErrorAction SilentlyContinue
+                if ($statusCheck.StatusCode -eq 200) {
+                    $portReady = $true
+                    Write-ColorOutput ">> Route planner service is ready!" "Green"
+                }
+            } catch {
+                $retryCount++
+                if ($retryCount -lt $maxRetries) {
+                    Write-ColorOutput ">> Waiting for route planner service to be ready (attempt $retryCount of $maxRetries)..." "Yellow"
+                    Start-Sleep -Seconds 2
+                }
+            }
+        }
         
         # Open browser to the route planner UI
         $routePlannerUrl = "http://localhost:30081"
         Write-ColorOutput ">> Opening route planner in your browser: $routePlannerUrl" "Cyan"
         Start-Process $routePlannerUrl
+        
+        # Add a slight delay before continuing to give the browser time to launch
+        Start-Sleep -Seconds 1
     }
 }
 
