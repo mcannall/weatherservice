@@ -436,6 +436,26 @@ jobs:
           --file "${{ github.workspace }}/.kubeconfig" \
           --region "$OCI_REGION" \
           --token-version 2.0.0
+          
+    - name: Verify Available Images
+      run: |
+        echo "Verifying available images in GitHub Container Registry..."
+        
+        # Log in to GitHub Container Registry
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        
+        # List all tags for the main API image
+        echo "Available tags for weather API image:"
+        URL="https://api.github.com/user/packages/container/weatherservice/tags"
+        curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" $URL | jq -r '.[].name'
+        
+        # List all tags for the route-weather-planner image
+        echo "Available tags for route-weather-planner image:"
+        URL="https://api.github.com/user/packages/container/weatherservice%2Froute-weather-planner/tags"
+        curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" $URL | jq -r '.[].name'
+        
+        # Print current SHA for reference
+        echo "Current commit SHA: ${{ github.sha }}"
 
     - name: Deploy to Kubernetes
       env:
@@ -464,6 +484,10 @@ jobs:
           --from-literal=OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY }} \
           --from-literal=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
           --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Update the deployment YAML with the actual SHA value
+        echo "Updating deployment files with SHA: ${{ github.sha }}"
+        sed -i "s/\${GITHUB_SHA}/${{ github.sha }}/g" k8s/deployment.yaml
         
         # Apply manifests
         kubectl apply -f k8s/
