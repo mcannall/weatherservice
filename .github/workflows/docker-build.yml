@@ -325,7 +325,7 @@ jobs:
           echo "Cleanup complete"
 
   deploy-to-oracle:
-    needs: build-and-push
+    needs: [build-and-push, build-and-push-route-weather-planner]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     
@@ -441,15 +441,23 @@ jobs:
       env:
         KUBECONFIG: ${{ github.workspace }}/.kubeconfig
       run: |
-        # Create secrets first
+        # Create GitHub Container Registry credentials
+        echo "Creating GitHub Container Registry secret..."
         kubectl create secret docker-registry ghcr-secret \
           --docker-server=ghcr.io \
-          --docker-username=${{ github.actor }} \
+          --docker-username=${{ github.repository_owner }} \
           --docker-password=${{ secrets.GITHUB_TOKEN }} \
+          --docker-email=${{ github.actor }}@users.noreply.github.com \
           --dry-run=client -o yaml | kubectl apply -f -
         
+        # Verify the secret
+        echo "Verifying secret..."
+        kubectl get secret ghcr-secret -o yaml | grep -v "dockerconfigjson:"
+        
         # Link the secret to the default service account
+        echo "Patching service account..."
         kubectl patch serviceaccount default -p '{"imagePullSecrets": [{"name": "ghcr-secret"}]}'
+        kubectl get serviceaccount default -o yaml
         
         # Create application secrets
         kubectl create secret generic weatherservice-secrets \
