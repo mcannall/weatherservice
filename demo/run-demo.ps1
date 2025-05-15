@@ -34,13 +34,57 @@ function Test-Prerequisites {
     
     # Check for Kubernetes
     try {
-        $k8sVersion = kubectl version --client --short 2>&1
-        if ($LASTEXITCODE -ne 0) {
+        # First try to get the command
+        $kubectlCommand = Get-Command kubectl -ErrorAction SilentlyContinue
+        
+        if ($kubectlCommand) {
+            # kubectl command found, now try different version checks
+            $k8sVersionSuccess = $false
+            
+            # Try the client version first
+            try {
+                $k8sVersion = kubectl version --client --short 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    $k8sVersionSuccess = $true
+                }
+            } catch {
+                # Silently continue to next method
+            }
+            
+            # If that didn't work, try without --short
+            if (-not $k8sVersionSuccess) {
+                try {
+                    $k8sVersion = kubectl version --client 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        $k8sVersionSuccess = $true
+                    }
+                } catch {
+                    # Silently continue to next method
+                }
+            }
+            
+            # If that didn't work, just check if kubectl exists
+            if (-not $k8sVersionSuccess) {
+                try {
+                    $k8sVersion = "version unknown"
+                    $k8sVersionSuccess = $true
+                } catch {
+                    # Last resort failed
+                    $k8sVersionSuccess = $false
+                }
+            }
+            
+            if ($k8sVersionSuccess) {
+                Write-Host "✅ kubectl is installed: $k8sVersion" -ForegroundColor Green
+            } else {
+                Write-Host "⚠️ kubectl command found but could not verify version" -ForegroundColor Yellow
+                Write-Host "   Continuing with the assumption that kubectl is working" -ForegroundColor Yellow
+            }
+        } else {
             Write-Host "❌ kubectl not found or not accessible" -ForegroundColor Red
             Write-Host "   Please make sure Kubernetes CLI is installed" -ForegroundColor Yellow
             return $false
         }
-        Write-Host "✅ kubectl is installed: $k8sVersion" -ForegroundColor Green
     }
     catch {
         Write-Host "❌ kubectl command failed: $($_.Exception.Message)" -ForegroundColor Red

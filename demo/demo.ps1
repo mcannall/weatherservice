@@ -833,17 +833,18 @@ if (-not $simulationMode) {
         Write-ColorOutput ">> Port forwarding established successfully!" "Green"
         # Give it a moment to fully stabilize (increased wait time)
         Write-ColorOutput ">> Waiting for port to stabilize..." "Cyan"
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 5
         
         # Verify the port is ready before opening the browser
         $portReady = $false
         $retryCount = 0
-        $maxRetries = 5
+        $maxRetries = 10  # Increased from 5 to 10
+        $retryDelay = 3   # Increased from 2 to 3 seconds
         
         while (-not $portReady -and $retryCount -lt $maxRetries) {
             try {
                 # Make a simple GET request to verify the service is responding
-                $statusCheck = Invoke-WebRequest -Uri "http://localhost:30081/" -Method Head -TimeoutSec 1 -ErrorAction SilentlyContinue
+                $statusCheck = Invoke-WebRequest -Uri "http://localhost:30081/" -Method Head -TimeoutSec 2 -ErrorAction SilentlyContinue
                 if ($statusCheck.StatusCode -eq 200) {
                     $portReady = $true
                     Write-ColorOutput ">> Route planner service is ready!" "Green"
@@ -852,18 +853,31 @@ if (-not $simulationMode) {
                 $retryCount++
                 if ($retryCount -lt $maxRetries) {
                     Write-ColorOutput ">> Waiting for route planner service to be ready (attempt $retryCount of $maxRetries)..." "Yellow"
-                    Start-Sleep -Seconds 2
+                    # Show error details for diagnostic purposes
+                    if ($_.Exception.Message -match "404") {
+                        Write-ColorOutput ">> Service is responding but returned 404 - this is normal during startup, continuing..." "Yellow"
+                        # A 404 means the service is running but the route isn't ready yet
+                        # This is still a good sign, so consider the port ready after a short delay
+                        Start-Sleep -Seconds 2
+                        $portReady = $true
+                        Write-ColorOutput ">> Service detected (404 response), proceeding..." "Green"
+                        break
+                    } else {
+                        Write-ColorOutput ">> Status: $($_.Exception.Message)" "Yellow"
+                        Start-Sleep -Seconds $retryDelay
+                    }
                 }
             }
         }
         
-        # Open browser to the route planner UI
+        # Open browser to the route planner UI - do this even if we're not fully ready
+        # as the browser can wait for the service to initialize
         $routePlannerUrl = "http://localhost:30081"
         Write-ColorOutput ">> Opening route planner in your browser: $routePlannerUrl" "Cyan"
         Start-Process $routePlannerUrl
         
-        # Add a slight delay before continuing to give the browser time to launch
-        Start-Sleep -Seconds 1
+        # Add a longer delay before continuing to give the service more time to initialize
+        Start-Sleep -Seconds 5
     }
 }
 
@@ -891,13 +905,29 @@ foreach ($route in $sampleRoutes) {
             $startEncoded = [System.Web.HttpUtility]::UrlEncode($route.start)
             $endEncoded = [System.Web.HttpUtility]::UrlEncode($route.end)
             
-            # Make the request
+            # Make the request with more retries for route data
             $routeUrl = "http://localhost:30081/route?start=$startEncoded&end=$endEncoded"
-            $routeResponse = Invoke-WebRequest -Uri $routeUrl -TimeoutSec 10
+            $routeSuccess = $false
+            $routeRetryCount = 0
+            $routeMaxRetries = 5
             
-            # If we got here, the page loaded successfully
-            Write-ColorOutput ">> Route planner page loaded successfully!" "Green"
-            Write-ColorOutput ">> Route information would be displayed in the web UI" "Green"
+            while (-not $routeSuccess -and $routeRetryCount -lt $routeMaxRetries) {
+                try {
+                    $routeResponse = Invoke-WebRequest -Uri $routeUrl -TimeoutSec 15
+                    # If we got here, the page loaded successfully
+                    $routeSuccess = $true
+                    Write-ColorOutput ">> Route planner page loaded successfully!" "Green"
+                    Write-ColorOutput ">> Route information would be displayed in the web UI" "Green"
+                } catch {
+                    $routeRetryCount++
+                    if ($routeRetryCount -lt $routeMaxRetries) {
+                        Write-ColorOutput (">> Retry " + $routeRetryCount + " of " + $routeMaxRetries + ": Waiting for route planner to respond...") "Yellow"
+                        Start-Sleep -Seconds 3
+                    } else {
+                        throw  # Re-throw the exception to be caught by the outer catch
+                    }
+                }
+            }
         }
         catch {
             Write-ColorOutput ">> Error: Failed to access Route Weather Planner" "Red"
@@ -969,8 +999,10 @@ foreach ($route in $sampleRoutes) {
             $location = if ($i -eq 1) { $startLocation } elseif ($i -eq $routePoints) { $endLocation } else { "Waypoint $i" }
             
             $stopHtml = "        <div class=`"weather-stop`">`n"
-            $stopHtml += "            <div class=`"label`">Location $i" + ": $location</div>`n"
-            $stopHtml += "            <div>Temperature: ${temp}°C / ${fahrenheit}°F</div>`n"
+            $locationLabel = "Location " + $i + ": " + $location
+            $stopHtml += "            <div class=`"label`">" + $locationLabel + "</div>`n"
+            $tempDisplay = "Temperature: " + $temp + "°C / " + $fahrenheit + "°F"
+            $stopHtml += "            <div>" + $tempDisplay + "</div>`n"
             $stopHtml += "            <div>Conditions: $conditions</div>`n"
             $stopHtml += "        </div>`n"
             
