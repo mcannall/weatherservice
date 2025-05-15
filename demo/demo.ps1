@@ -752,9 +752,55 @@ foreach ($location in $zipCodes) {
                     if ($healthCheck.status -eq "Healthy") {
                         Write-ColorOutput ">> API service reports healthy but cannot get weather data." "Yellow"
                         Write-ColorOutput ">> This may be an OpenWeatherMap API key issue." "Yellow"
+                        
+                        # Try to get more diagnostic information
+                        try {
+                            Write-ColorOutput ">> Checking API configuration..." "Yellow"
+                            $configCheck = Invoke-RestMethod -Uri "http://localhost:30080/config/status" -TimeoutSec 5 -ErrorAction SilentlyContinue
+                            if ($configCheck -and $configCheck.openWeatherMapConfigured) {
+                                Write-ColorOutput ">> API reports OpenWeatherMap as configured." "Green"
+                            } else {
+                                Write-ColorOutput ">> API reports OpenWeatherMap configuration is missing or invalid." "Red"
+                            }
+                        } catch {
+                            # Config endpoint might not exist, that's ok
+                        }
                     }
                 } catch {
                     Write-ColorOutput ">> API health check failed. Service might be misconfigured." "Red"
+                    
+                    # Try to diagnose why the health check failed
+                    if ($_.Exception.Message -match "404") {
+                        Write-ColorOutput ">> Health endpoint not found (404). This API version may not support health checks." "Yellow"
+                    } elseif ($_.Exception.Message -match "500") {
+                        Write-ColorOutput ">> Health endpoint returned server error (500). API service has internal errors." "Red"
+                    } elseif ($_.Exception.Message -match "ConnectionRefused|ConnectFailure") {
+                        Write-ColorOutput ">> Cannot connect to API service. The service might still be starting up." "Yellow"
+                        Write-ColorOutput ">> Waiting 5 more seconds for API to initialize..." "Yellow"
+                        Start-Sleep -Seconds 5
+                        
+                        # Try the original request again after waiting
+                        try {
+                            $response = Invoke-RestMethod -Uri "http://localhost:30080/weather/$($location.zip)" -TimeoutSec 10
+                            Write-ColorOutput "Temperature: $($response.temperatureC)C / $($response.temperatureF)F" "Green"
+                            Write-ColorOutput "Conditions: $($response.summary)" "Green"
+                            continue
+                        } catch {
+                            Write-ColorOutput ">> API still not responding correctly after waiting." "Red"
+                        }
+                    }
+                    
+                    # Provide API key troubleshooting steps
+                    Write-ColorOutput "`n>> API Troubleshooting Steps:" "Cyan"
+                    Write-ColorOutput "1. Verify OpenWeatherMap API key is set correctly:" "White"
+                    Write-ColorOutput "   - Run './demo/set-openweather-key.ps1' to set your API key" "White"
+                    Write-ColorOutput "   - Check that you're using a valid, non-expired API key" "White"
+                    Write-ColorOutput "2. Check Docker and Kubernetes setup:" "White"
+                    Write-ColorOutput "   - Make sure Docker Desktop is running" "White"
+                    Write-ColorOutput "   - Verify Kubernetes is enabled in Docker Desktop settings" "White"
+                    Write-ColorOutput "3. Inspect the API container logs:" "White"
+                    Write-ColorOutput "   - Run 'kubectl logs -l app=weatherservice,component=api' to see API logs" "White"
+                    Write-ColorOutput "   - Look for error messages related to OpenWeatherMap API" "White"
                 }
                 Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
                 $simulationMode = $true

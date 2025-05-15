@@ -149,4 +149,45 @@ if ($LASTEXITCODE -ne 0) {
 
 # Run the demo
 Write-Host "`nStarting the demo script..." -ForegroundColor Green
+
+# Preflight check - verify API key is properly configured for containers
+if ($env:OPENWEATHERMAP_API_KEY) {
+    Write-Host "`nPerforming preflight check for API key configuration..." -ForegroundColor Cyan
+    try {
+        # Create test secret to verify API key will be correctly passed to containers
+        $secretValue = $env:OPENWEATHERMAP_API_KEY
+        $secretLength = $secretValue.Length
+        $maskedKey = $secretValue.Substring(0, 4) + "..." + $secretValue.Substring($secretLength - 4, 4)
+        
+        Write-Host "API Key detected ($maskedKey), length: $secretLength chars" -ForegroundColor Cyan
+        
+        if ($secretLength -lt 20) {
+            Write-Host "⚠️ WARNING: Your API key seems unusually short. Please verify it's correct." -ForegroundColor Yellow
+        }
+        
+        # Check if the key contains common placeholder text
+        if ($secretValue -match "your|placeholder|example|key|apikey|<|>") {
+            Write-Host "⚠️ WARNING: Your API key appears to contain placeholder text!" -ForegroundColor Red
+            Write-Host "   The current value may not be a valid OpenWeatherMap API key." -ForegroundColor Red
+            Write-Host "   Run './demo/set-openweather-key.ps1' to set a valid key." -ForegroundColor Yellow
+        }
+        
+        Write-Host "✅ API key preflight check completed" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "⚠️ Error during API key preflight check: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+# Additional check for windows-specific environment variable issues
+$envVarCheck = Get-ChildItem env:OPENWEATHERMAP_API_KEY -ErrorAction SilentlyContinue
+if ($envVarCheck) {
+    $checkValue = $envVarCheck.Value
+    if ($checkValue.Contains("`r") -or $checkValue.Contains("`n")) {
+        Write-Host "⚠️ WARNING: Your API key contains newline characters!" -ForegroundColor Red
+        Write-Host "   This will cause problems when passing to containers." -ForegroundColor Red
+        Write-Host "   Please run './demo/set-openweather-key.ps1' again and ensure no extra spaces or newlines." -ForegroundColor Yellow
+    }
+}
+
 & "$scriptDir/demo.ps1" 
