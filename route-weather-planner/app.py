@@ -35,8 +35,36 @@ app = Flask(__name__)
 
 # Configuration
 API_URL = os.getenv('API_URL', 'http://api:80')
-GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
+
+# Clean up the API key to handle common issues
+if GOOGLE_MAPS_API_KEY:
+    # Remove any whitespace
+    GOOGLE_MAPS_API_KEY = GOOGLE_MAPS_API_KEY.strip()
+    # Remove any quotes that might have been accidentally included
+    GOOGLE_MAPS_API_KEY = GOOGLE_MAPS_API_KEY.replace('"', '').replace("'", "")
+
 SKIP_API_VALIDATION = os.getenv('SKIP_API_VALIDATION', 'false').lower() == 'true'
+DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
+
+# Add enhanced API key debugging
+if DEBUG_MODE:
+    # Log API key information (partially redacted)
+    if GOOGLE_MAPS_API_KEY:
+        key_length = len(GOOGLE_MAPS_API_KEY)
+        first_chars = GOOGLE_MAPS_API_KEY[:4] if key_length >= 4 else GOOGLE_MAPS_API_KEY
+        last_chars = GOOGLE_MAPS_API_KEY[-4:] if key_length >= 4 else ""
+        logger.info(f"Google Maps API key: {first_chars}...{last_chars} (length: {key_length})")
+        
+        # Check for common issues
+        if len(GOOGLE_MAPS_API_KEY.strip()) != key_length:
+            logger.warning("API key contains leading/trailing whitespace!")
+        if "'" in GOOGLE_MAPS_API_KEY or '"' in GOOGLE_MAPS_API_KEY:
+            logger.warning("API key contains quotes which might cause issues!")
+        if "\\" in GOOGLE_MAPS_API_KEY:
+            logger.warning("API key contains backslashes which might cause issues!")
+    else:
+        logger.error("Google Maps API key is not set or is empty!")
 
 # Initialize Google Maps client
 if SKIP_API_VALIDATION:

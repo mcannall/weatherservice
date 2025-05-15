@@ -254,16 +254,33 @@ jobs:
             GOOGLE_MAPS_API_KEY="dummy-key-for-testing"
           else
             echo "Google Maps API key is available (first 4 chars): ${GOOGLE_MAPS_API_KEY:0:4}..."
+            echo "API key length: ${#GOOGLE_MAPS_API_KEY} characters"
+            
+            # Check if the key has any unusual characters
+            if [[ "$GOOGLE_MAPS_API_KEY" == *"'"* || "$GOOGLE_MAPS_API_KEY" == *"\""* || "$GOOGLE_MAPS_API_KEY" == *"\\"* ]]; then
+              echo "Warning: API key contains quotes or escapes which might cause issues"
+            fi
+            
+            # Print a sanitized version of the key for debugging (first 4 chars, last 4 chars)
+            LAST_FOUR="${GOOGLE_MAPS_API_KEY: -4}"
+            echo "API key format: ${GOOGLE_MAPS_API_KEY:0:4}...${LAST_FOUR}"
           fi
           
-          echo "Starting container..."
+          echo "Starting container with enhanced debugging..."
           docker run -d -p 5000:5000 \
-            -e GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY \
+            -e GOOGLE_MAPS_API_KEY="$GOOGLE_MAPS_API_KEY" \
             -e SKIP_API_VALIDATION=true \
+            -e DEBUG_MODE=true \
             --name route-weather-planner \
             ghcr.io/${{ github.repository }}/route-weather-planner:latest
+          
           echo "Container started. Checking container status..."
           docker ps
+          
+          # Verify the environment variables inside the container
+          echo "Checking container environment variables:"
+          docker exec route-weather-planner env | grep -E 'GOOGLE_MAPS_API_KEY|SKIP_API_VALIDATION|DEBUG_MODE'
+          
           echo "Container logs (first 100 lines):"
           docker logs route-weather-planner | head -n 100
           
