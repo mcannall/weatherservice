@@ -189,4 +189,20 @@ jobs:
           echo "Cleaning up..."
           docker stop route-weather-planner
           docker rm route-weather-planner
-          echo "Cleanup complete" 
+          echo "Cleanup complete"
+
+  # Add a new job to output workflow information
+  debug-info:
+    needs: [build-and-push, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Output Workflow Information
+        run: |
+          echo "Workflow name: ${{ github.workflow }}"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "This information is intended to help debug workflow triggers" 
