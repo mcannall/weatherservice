@@ -4,7 +4,7 @@ A microservices-based weather and route planning application that provides weath
 
 ## Application Screenshots
 
-![Route Weather Planner with Radar Display](docs/images/route-planner-screenshot.png)
+![Route Weather Planner with Radar Display](docs/images/weatherrouteplanner.png)
 
 *The Route Weather Planner showing a route with weather checkpoints and NOAA radar overlay*
 
