@@ -302,7 +302,8 @@ function Show-CICDPipeline {
 
 # Set up global variables
 $projectRoot = Get-Location
-$env:OPENWEATHERMAP_API_KEY = "your-api-key-here"  # Replace with your actual API key
+# Note: You must set OPENWEATHERMAP_API_KEY as an environment variable before running this script
+# $env:OPENWEATHERMAP_API_KEY = "your-api-key-here"  # Example - do NOT store real keys in this file
 $useMockData = $true  # Change to $false to use real API
 
 # Get current git commit SHA for consistent image tagging
@@ -460,7 +461,7 @@ if (-not $googleMapsApiKey) {
 Write-ColorOutput ">> Successfully read Google Maps API key from .env" "Green"
 
 $secrets = @{
-    OPENWEATHERMAP_API_KEY = "3ba1f600644f4b4c4290d0a97a0c3878"
+    OPENWEATHERMAP_API_KEY = $env:OPENWEATHERMAP_API_KEY
     GOOGLE_MAPS_API_KEY = $googleMapsApiKey
 }
 $secretArgs = $secrets.GetEnumerator() | ForEach-Object { "--from-literal=$($_.Key)=$($_.Value)" }
