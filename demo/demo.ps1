@@ -708,6 +708,20 @@ foreach ($location in $zipCodes) {
             Write-ColorOutput ">> Error: Failed to get weather data for $($location.zip)" "Red"
             Write-ColorOutput ">> Error details: $($_.Exception.Message)" "Red"
             
+            # Check specific error types for better diagnostics
+            if ($_.Exception.Message -match "Unauthorized" -or $_.Exception.Response.StatusCode -eq 401) {
+                Write-ColorOutput ">> API KEY ERROR: Your OpenWeatherMap API key might not be set properly" "Red"
+                Write-ColorOutput ">> Make sure to run the set-openweather-key.ps1 script before running the demo" "Yellow"
+                Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+                $simulationMode = $true
+                continue
+            }
+            
+            if ($_.Exception.Message -match "No connection|ConnectFailure|actively refused") {
+                Write-ColorOutput ">> CONNECTION ERROR: Cannot connect to the weather API service" "Red"
+                Write-ColorOutput ">> Make sure Docker is running and container networking is functioning properly" "Yellow"
+            }
+            
             # Check if port forwarding is still active
             if (-not (Test-PortInUse -Port 30080)) {
                 Write-ColorOutput ">> Port forwarding appears to have stopped" "Red"
@@ -722,7 +736,31 @@ foreach ($location in $zipCodes) {
                     $simulationMode = $true
                 } else {
                     Write-ColorOutput ">> Port forwarding restarted successfully!" "Green"
+                    Write-ColorOutput ">> Retrying weather API request..." "Yellow"
+                    try {
+                        $response = Invoke-RestMethod -Uri "http://localhost:30080/weather/$($location.zip)" -TimeoutSec 10
+                        Write-ColorOutput "Temperature: $($response.temperatureC)C / $($response.temperatureF)F" "Green"
+                        Write-ColorOutput "Conditions: $($response.summary)" "Green"
+                        continue
+                    } catch {
+                        Write-ColorOutput ">> Still unable to get weather data. Running in simulation mode..." "Red"
+                        $simulationMode = $true
+                    }
                 }
+            } else {
+                # Try to diagnose the API issue
+                Write-ColorOutput ">> Attempting to diagnose API service issue..." "Yellow"
+                try {
+                    $healthCheck = Invoke-RestMethod -Uri "http://localhost:30080/health" -TimeoutSec 5 -ErrorAction SilentlyContinue
+                    if ($healthCheck.status -eq "Healthy") {
+                        Write-ColorOutput ">> API service reports healthy but cannot get weather data." "Yellow"
+                        Write-ColorOutput ">> This may be an OpenWeatherMap API key issue." "Yellow"
+                    }
+                } catch {
+                    Write-ColorOutput ">> API health check failed. Service might be misconfigured." "Red"
+                }
+                Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+                $simulationMode = $true
             }
         }
     } else {
