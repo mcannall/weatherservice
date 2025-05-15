@@ -913,15 +913,90 @@ foreach ($route in $sampleRoutes) {
             
             while (-not $routeSuccess -and $routeRetryCount -lt $routeMaxRetries) {
                 try {
+                    # First check if the service is responding at all using the test endpoint
+                    if ($routeRetryCount -eq 2) {
+                        Write-ColorOutput ">> Testing route planner service availability..." "Yellow"
+                        try {
+                            $testResponse = Invoke-WebRequest -Uri "http://localhost:30081/test" -TimeoutSec 5 -ErrorAction SilentlyContinue
+                            if ($testResponse.StatusCode -eq 200) {
+                                $testResult = $testResponse.Content | ConvertFrom-Json
+                                Write-ColorOutput ">> Service is running. Available endpoints: $($testResult.endpoints | ConvertTo-Json -Compress)" "Green"
+                            }
+                        } catch {
+                            Write-ColorOutput ">> Service test endpoint is not available: $($_.Exception.Message)" "Yellow"
+                        }
+                    }
+                    
+                    Write-ColorOutput ">> Requesting route data from: $routeUrl" "Cyan"
                     $routeResponse = Invoke-WebRequest -Uri $routeUrl -TimeoutSec 15
+                    
                     # If we got here, the page loaded successfully
                     $routeSuccess = $true
                     Write-ColorOutput ">> Route planner page loaded successfully!" "Green"
+                    
+                    # Check if we got a proper JSON response
+                    try {
+                        $jsonContent = $routeResponse.Content | ConvertFrom-Json
+                        if ($jsonContent.route) {
+                            $routePoints = $jsonContent.route.Count
+                            Write-ColorOutput ">> Received route data with $routePoints stops" "Green"
+                        } else {
+                            Write-ColorOutput ">> Received response but no route data found" "Yellow"
+                        }
+                    } catch {
+                        Write-ColorOutput ">> Received non-JSON response" "Yellow"
+                    }
+                    
                     Write-ColorOutput ">> Route information would be displayed in the web UI" "Green"
                 } catch {
                     $routeRetryCount++
+                    $statusCode = $_.Exception.Response.StatusCode.value__
+                    $statusDescription = $_.Exception.Response.StatusDescription
+                    
                     if ($routeRetryCount -lt $routeMaxRetries) {
                         Write-ColorOutput (">> Retry " + $routeRetryCount + " of " + $routeMaxRetries + ": Waiting for route planner to respond...") "Yellow"
+                        
+                        # Add detailed status information if available
+                        if ($statusCode) {
+                            Write-ColorOutput ">> HTTP Status: $statusCode $statusDescription" "Yellow"
+                            
+                            # If we're getting 404s, try the alternate endpoint
+                            if ($statusCode -eq 404 -and $routeRetryCount -eq 3) {
+                                $alternateUrl = "http://localhost:30081/get_route_weather"
+                                Write-ColorOutput ">> Route endpoint not found. Trying alternate endpoint: $alternateUrl" "Yellow"
+                                try {
+                                    $jsonData = @{
+                                        addresses = @($route.start, $route.end)
+                                        interval_distance = 10
+                                        preferences = @{
+                                            avoid_highways = $false
+                                            avoid_tolls = $false
+                                            optimize_route = $false
+                                        }
+                                    } | ConvertTo-Json -Depth 3
+                                    
+                                    $postParams = @{
+                                        Uri = $alternateUrl
+                                        Method = 'POST'
+                                        Body = $jsonData
+                                        ContentType = 'application/json'
+                                        TimeoutSec = 20
+                                    }
+                                    
+                                    $alternateResponse = Invoke-WebRequest @postParams
+                                    if ($alternateResponse.StatusCode -eq 200) {
+                                        Write-ColorOutput ">> Successfully called alternate endpoint!" "Green"
+                                        $routeSuccess = $true
+                                        break
+                                    }
+                                } catch {
+                                    Write-ColorOutput ">> Alternate endpoint also failed: $($_.Exception.Message)" "Yellow"
+                                }
+                            }
+                        } else {
+                            Write-ColorOutput ">> Error: $($_.Exception.Message)" "Yellow"
+                        }
+                        
                         Start-Sleep -Seconds 3
                     } else {
                         throw  # Re-throw the exception to be caught by the outer catch

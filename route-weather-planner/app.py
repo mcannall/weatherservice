@@ -238,6 +238,182 @@ def calculate_route_points(directions_result, interval_distance):
     
     return points
 
+@app.route('/route')
+def route():
+    """Handle GET requests for routes with query parameters (for compatibility with demo script)"""
+    try:
+        logger.info("Route endpoint accessed via GET request")
+        
+        # Get query parameters
+        start = request.args.get('start')
+        end = request.args.get('end')
+        
+        if not start or not end:
+            logger.error("Missing start or end parameters")
+            return jsonify({'error': 'Both start and end parameters are required'}), 400
+        
+        logger.info(f"Redirecting route request from {start} to {end}")
+        
+        # Create a JSON payload for the get_route_weather endpoint
+        data = {
+            'addresses': [start, end],
+            'interval_distance': 10,
+            'preferences': {
+                'avoid_highways': False,
+                'avoid_tolls': False,
+                'optimize_route': False
+            }
+        }
+        
+        # Instead of redirecting, emulate a POST request to /get_route_weather
+        try:
+            logger.debug(f"Processing route data: {data}")
+            
+            # Use the existing function's logic but with our data
+            addresses = data.get('addresses', [])
+            interval_distance = data.get('interval_distance', 10)
+            preferences = data.get('preferences', {})
+            
+            if len(addresses) < 2:
+                return jsonify({'error': 'At least two addresses are required'}), 400
+                
+            if interval_distance < 1 or interval_distance > 100:
+                return jsonify({'error': 'Interval distance must be between 1 and 100 miles'}), 400
+
+            # Get coordinates for each address
+            coordinates = []
+            for address in addresses:
+                lat, lon, result = get_coordinates_and_zip(address)
+                if lat is None or lon is None:
+                    return jsonify({'error': result}), 400
+                
+                coordinates.append({
+                    'lat': lat,
+                    'lon': lon,
+                    'address': address
+                })
+
+            # Build the avoid list based on preferences
+            avoid_list = []
+            if preferences.get('avoid_highways'):
+                avoid_list.append('highways')
+            if preferences.get('avoid_tolls'):
+                avoid_list.append('tolls')
+            
+            directions_result = gmaps.directions(
+                origin=coordinates[0]['address'],
+                destination=coordinates[-1]['address'],
+                waypoints=[coord['address'] for coord in coordinates[1:-1]],
+                optimize_waypoints=preferences.get('optimize_route', False),
+                mode="driving",
+                avoid=avoid_list if avoid_list else None,
+                alternatives=False
+            )
+            
+            if not directions_result:
+                return jsonify({'error': 'Could not calculate route'}), 400
+
+            # Get points along the actual driving route
+            route_points = calculate_route_points(directions_result[0], interval_distance)
+            
+            # Process points to get weather data
+            route_path = []
+            last_zip = None
+            seen_zips = set()
+            
+            # Add the origin point
+            origin_zip = get_zip_code(coordinates[0]['lat'], coordinates[0]['lon'])
+            route_path.append({
+                'lat': coordinates[0]['lat'],
+                'lon': coordinates[0]['lon'],
+                'address': coordinates[0]['address'],
+                'is_stop': True
+            })
+            
+            if origin_zip:
+                seen_zips.add(origin_zip)
+                last_zip = origin_zip
+
+            # Process each route point
+            for point in route_points:
+                current_zip = get_zip_code(point['lat'], point['lng'])
+                
+                if current_zip and current_zip != last_zip:
+                    route_path.append({
+                        'lat': point['lat'],
+                        'lon': point['lng'],
+                        'address': 'Route Point',
+                        'is_stop': False
+                    })
+                    last_zip = current_zip
+                    seen_zips.add(current_zip)
+
+            # Add the final destination
+            final_zip = get_zip_code(coordinates[-1]['lat'], coordinates[-1]['lon'])
+            route_path.append({
+                'lat': coordinates[-1]['lat'],
+                'lon': coordinates[-1]['lon'],
+                'address': coordinates[-1]['address'],
+                'is_stop': True
+            })
+            
+            if final_zip:
+                seen_zips.add(final_zip)
+
+            # Now add weather data for all points
+            route_with_weather = []
+            weather_service_available = True
+
+            for point in route_path:
+                if weather_service_available:
+                    weather = get_weather_data(point['lat'], point['lon'])
+                    if weather and weather.get('temperatureC') is None:
+                        weather_service_available = False
+                else:
+                    weather = {
+                        'zip_code': get_zip_code(point['lat'], point['lon']),
+                        'temperatureC': None,
+                        'temperatureF': None,
+                        'summary': 'Weather service unavailable'
+                    }
+
+                route_with_weather.append({
+                    'lat': point['lat'],
+                    'lon': point['lon'],
+                    'address': point['address'],
+                    'is_stop': point['is_stop'],
+                    'weather': weather,
+                    'zip_code': weather['zip_code'] if weather else None
+                })
+
+            return jsonify({'route': route_with_weather})
+            
+        except Exception as e:
+            logger.error(f"Error processing route request: {str(e)}")
+            return jsonify({'error': f'Error processing route: {str(e)}'}), 500
+    
+    except Exception as e:
+        logger.error(f"Error in route endpoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/test')
+def test():
+    """Endpoint for testing if the service is running correctly."""
+    return jsonify({
+        'status': 'success',
+        'message': 'Route Weather Planner service is operational',
+        'version': VERSION,
+        'api_url': API_URL,
+        'google_maps_key_configured': bool(GOOGLE_MAPS_API_KEY),
+        'endpoints': {
+            'route': '/route?start=Los+Angeles,+CA&end=San+Francisco,+CA',
+            'get_route_weather': '/get_route_weather (POST)',
+            'weather': '/weather/{zip_code}',
+            'test': '/test',
+            'test_weather': '/test-weather-connection'
+        }
+    })
+
 @app.route('/')
 def index():
     return render_template('index.html', google_maps_api_key=GOOGLE_MAPS_API_KEY, version=VERSION)
