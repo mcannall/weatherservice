@@ -36,7 +36,25 @@ app = Flask(__name__)
 # Configuration
 API_URL = os.getenv('API_URL', 'http://api:80')
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
-gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+SKIP_API_VALIDATION = os.getenv('SKIP_API_VALIDATION', 'false').lower() == 'true'
+
+# Initialize Google Maps client
+if SKIP_API_VALIDATION:
+    logger.warning("API key validation is being skipped (for testing only)")
+    # Create a mock client for testing
+    class MockGoogleMapsClient:
+        def __init__(self, *args, **kwargs):
+            pass
+        def geocode(self, *args, **kwargs):
+            return [{'geometry': {'location': {'lat': 42.12345, 'lng': -83.12345}}, 'address_components': []}]
+        def directions(self, *args, **kwargs):
+            return [{'legs': [{'steps': [{'polyline': {'points': 'a~l~Fjk~uOwHJy@P'}, 'distance': {'value': 100}}]}]}]
+        def reverse_geocode(self, *args, **kwargs):
+            return [{'address_components': [{'types': ['postal_code'], 'long_name': '12345'}]}]
+    gmaps = MockGoogleMapsClient(key=GOOGLE_MAPS_API_KEY)
+else:
+    gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+
 geolocator = Nominatim(
     user_agent="route_weather_planner",
     timeout=10  # Increase timeout to 10 seconds

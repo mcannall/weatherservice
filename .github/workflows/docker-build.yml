@@ -259,6 +259,7 @@ jobs:
           echo "Starting container..."
           docker run -d -p 5000:5000 \
             -e GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY \
+            -e SKIP_API_VALIDATION=true \
             --name route-weather-planner \
             ghcr.io/${{ github.repository }}/route-weather-planner:latest
           echo "Container started. Checking container status..."
