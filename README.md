@@ -35,6 +35,7 @@ graph TB
    - Calculates routes between locations using Google Maps API
    - Fetches weather data for points along the route
    - Provides consolidated route and weather information
+   - Integrates real-time NOAA radar imagery from Iowa State University's MESONET service
    - Uses Gunicorn for production deployment
 
 ### Technology Stack
@@ -45,6 +46,7 @@ graph TB
 - **APIs**:
   - OpenWeatherMap API for weather data
   - Google Maps API for route planning
+  - NOAA radar data via Iowa State University's MESONET service (no API key required)
 - **Container Runtime**: Docker
 - **Container Registry**: GitHub Container Registry (ghcr.io)
 - **Orchestration**: Kubernetes

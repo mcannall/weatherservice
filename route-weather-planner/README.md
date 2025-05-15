@@ -7,6 +7,7 @@ A service that provides weather information along a route between two points.
 - Weather information from OpenWeatherMap
 - Multi-architecture support (AMD64/ARM64)
 - Production-ready with Gunicorn WSGI server
+- **Real-time NOAA weather radar** display through Iowa State University's MESONET service
 
 ## Prerequisites
 
@@ -84,6 +85,18 @@ For local development, the API service should be running and accessible at `http
 - Interactive map display
 - Route optimization options
 - Weather-based route recommendations
+
+## Weather Radar Data
+
+The application integrates real-time weather radar data from the National Oceanic and Atmospheric Administration (NOAA) provided through Iowa State University's MESONET service. This feature:
+
+- Displays precipitation and storm patterns directly on the map
+- Updates automatically every 2 minutes when activated
+- Does not require an additional API key (free public service)
+- Uses NEXRAD (Next-Generation Radar) data for high-quality visualization
+- Can be toggled on/off via the button in the map's top-right corner
+
+The radar data is sourced from: https://mesonet.agron.iastate.edu/
 
 ## Contributing
 
