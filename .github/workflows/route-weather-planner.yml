@@ -64,24 +64,15 @@ jobs:
 
       - name: Install OCI CLI
         run: |
-          curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
-          chmod +x install.sh
-          ./install.sh --accept-all-defaults
+          # Install required packages
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
           
-          # Add OCI CLI to PATH
-          echo "$HOME/bin" >> $GITHUB_PATH
-          echo "/home/runner/bin" >> $GITHUB_PATH
+          # Install OCI CLI via pip (more reliable than script)
+          pip3 install oci-cli
           
           # Verify installation
-          ls -la $HOME/bin || echo "bin directory not found in HOME"
-          ls -la /home/runner/bin || echo "bin directory not found in /home/runner"
-          
-          # Explicitly export PATH for this step
-          export PATH="$HOME/bin:$PATH"
-          export PATH="/home/runner/bin:$PATH"
-          
-          # Verify OCI CLI is available
-          which oci || echo "OCI CLI not found in PATH"
+          oci --version
 
       - name: Configure OCI CLI
         run: |
@@ -92,23 +83,17 @@ jobs:
 
       - name: Get OKE kubeconfig
         run: |
-          # Ensure OCI CLI is in PATH
-          export PATH="$HOME/bin:$PATH"
-          export PATH="/home/runner/bin:$PATH"
-          
-          # Try to find the OCI executable
-          OCI_CMD=$(which oci || echo "/home/runner/bin/oci")
-          
-          if [ ! -f "$OCI_CMD" ]; then
-            echo "OCI CLI not found at $OCI_CMD"
-            find $HOME -name "oci" 2>/dev/null || echo "Could not find oci executable"
+          # Debug OKE_CLUSTER_ID
+          if [ -z "${{ secrets.OKE_CLUSTER_ID }}" ]; then
+            echo "ERROR: OKE_CLUSTER_ID is not set in secrets"
             exit 1
+          else
+            # Print first few characters for verification
+            echo "Using OKE_CLUSTER_ID starting with: ${OKE_CLUSTER_ID:0:8}..."
           fi
           
-          echo "Using OCI CLI at: $OCI_CMD"
-          
-          # Create kubeconfig with explicit path to OCI CLI
-          $OCI_CMD ce cluster create-kubeconfig --cluster-id ${{ secrets.OKE_CLUSTER_ID }} --file $HOME/.kube/config --region us-chicago-1 --token-version 2.0.0
+          # Create kubeconfig
+          oci ce cluster create-kubeconfig --cluster-id ${{ secrets.OKE_CLUSTER_ID }} --file $HOME/.kube/config --region us-chicago-1 --token-version 2.0.0
           chmod 600 $HOME/.kube/config
 
       - name: Create image pull secret
