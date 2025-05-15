@@ -17,9 +17,12 @@ spec:
         app: weatherservice
         component: route-planner
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: route-planner
         image: ghcr.io/mcannall/weatherservice/route-weather-planner:${GITHUB_SHA}
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5000
         command: ["gunicorn"]

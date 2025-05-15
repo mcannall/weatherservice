@@ -278,17 +278,17 @@ function Show-CICDPipeline {
         @{
             title = "4. Docker Build"
             description = "Builds Docker image with latest code"
-            command = "docker build -t ghcr.io/mcannall/weatherservice:latest"
+            command = "docker build -t ghcr.io/mcannall/weatherservice:$commitSha"
         },
         @{
             title = "5. Push to GitHub Packages"
             description = "Pushes image to GitHub Container Registry"
-            command = "docker push ghcr.io/mcannall/weatherservice:latest"
+            command = "docker push ghcr.io/mcannall/weatherservice:$commitSha"
         },
         @{
             title = "6. Deploy to Kubernetes"
             description = "Updates Kubernetes deployment with new image"
-            command = "kubectl set image deployment/api api=ghcr.io/mcannall/weatherservice:latest"
+            command = "kubectl set image deployment/api api=ghcr.io/mcannall/weatherservice:$commitSha"
         }
     )
 
@@ -299,6 +299,18 @@ function Show-CICDPipeline {
         Start-Sleep -Seconds 2
     }
 }
+
+# Set up global variables
+$projectRoot = Get-Location
+$env:OPENWEATHERMAP_API_KEY = "your-api-key-here"  # Replace with your actual API key
+$useMockData = $true  # Change to $false to use real API
+
+# Get current git commit SHA for consistent image tagging
+$commitSha = $(git rev-parse --short HEAD)
+if (-not $commitSha) {
+    $commitSha = "local-$(Get-Date -Format 'yyyyMMddHHmmss')"
+}
+Write-Host "Using commit SHA: $commitSha for image tagging" -ForegroundColor Cyan
 
 # Check prerequisites
 Write-ColorOutput ">> Checking prerequisites..." "Cyan"

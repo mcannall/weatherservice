@@ -20,6 +20,8 @@ spec:
         app: weatherservice
         component: api
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: api
         image: ghcr.io/mcannall/weatherservice:${GITHUB_SHA}
@@ -36,9 +38,8 @@ spec:
               key: OPENWEATHERMAP_API_KEY
         - name: OpenWeatherMap__BaseUrl
           value: "https://api.openweathermap.org/data/2.5"
-      imagePullSecrets:
-      - name: ghcr-secret
 ---
+# Route planner configuration
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -8,6 +8,7 @@ on:
       - completed
     branches:
       - main
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -17,7 +18,7 @@ jobs:
   deploy:
     name: Deploy to OKE
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
 
     permissions:
       contents: read
@@ -28,7 +29,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install and configure OCI CLI
         run: |
@@ -83,8 +84,14 @@ jobs:
 
       - name: Verify and wait for images
         run: |
-          # Get the short SHA
-          SHORT_SHA=$(echo ${{ github.event.workflow_run.head_sha }} | cut -c1-7)
+          # Get the SHA to use
+          if [ -n "${{ github.event.workflow_run.head_sha }}" ]; then
+            COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
+          else
+            COMMIT_SHA="${{ github.sha }}"
+          fi
+          
+          echo "Using commit SHA: $COMMIT_SHA"
           
           # Function to verify image availability with retries
           verify_image() {
@@ -108,97 +115,36 @@ jobs:
           }
           
           # Verify both images
-          verify_image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/route-weather-planner:sha-$SHORT_SHA" || exit 1
-          verify_image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-$SHORT_SHA" || exit 1
+          verify_image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/route-weather-planner:$COMMIT_SHA" || exit 1
+          verify_image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$COMMIT_SHA" || exit 1
+          
+          # Set the SHA for later steps
+          echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_ENV
 
-      - name: Update Kubernetes Deployments with retries
+      - name: Update deployment files with SHA
         run: |
-          # Get the short SHA
-          SHORT_SHA=$(echo ${{ github.event.workflow_run.head_sha }} | cut -c1-7)
-          
-          # Function to update deployment with retries
-          update_deployment() {
-            local deployment=$1
-            local container=$2
-            local image=$3
-            local max_attempts=5
-            local wait_time=30
-            
-            echo "Updating deployment: $deployment"
-            
-            for i in $(seq 1 $max_attempts); do
-              if kubectl set image deployment/$deployment $container=$image; then
-                echo "✓ Successfully updated deployment: $deployment"
-                return 0
-              fi
-              echo "Attempt $i/$max_attempts: Failed to update deployment. Waiting ${wait_time}s..."
-              sleep $wait_time
-            done
-            
-            echo "✗ Failed to update deployment: $deployment after $max_attempts attempts"
-            return 1
-          }
-          
-          # Update deployments with retries
-          update_deployment "route-planner" "route-planner" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/route-weather-planner:sha-$SHORT_SHA" || exit 1
-          update_deployment "weather-api" "api" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-$SHORT_SHA" || exit 1
+          # Update deployment YAML with the SHA
+          sed -i "s/\${GITHUB_SHA}/${{ env.COMMIT_SHA }}/g" k8s/deployment.yaml
 
-      - name: Wait for deployments with enhanced monitoring
+      - name: Apply Kubernetes manifests
         run: |
-          # Function to wait for deployment with detailed status
-          wait_for_deployment() {
-            local deployment=$1
-            local timeout=300  # 5 minutes timeout
-            local interval=10  # Check every 10 seconds
-            local elapsed=0
-            
-            echo "Waiting for deployment: $deployment"
-            
-            while [ $elapsed -lt $timeout ]; do
-              # Get deployment status
-              local status=$(kubectl rollout status deployment/$deployment --timeout=5s 2>&1)
-              local exit_code=$?
-              
-              if [ $exit_code -eq 0 ]; then
-                echo "✓ Deployment $deployment successfully rolled out"
-                return 0
-              fi
-              
-              # Get pod status for debugging
-              echo "Current pod status for $deployment:"
-              kubectl get pods -l app=weatherservice -o wide
-              
-              # Get events for debugging
-              echo "Recent events:"
-              kubectl get events --sort-by='.lastTimestamp' | tail -n 5
-              
-              elapsed=$((elapsed + interval))
-              echo "Waiting... ($elapsed/${timeout}s)"
-              sleep $interval
-            done
-            
-            echo "✗ Deployment $deployment failed to roll out within ${timeout}s"
-            return 1
-          }
+          # Apply all manifests
+          kubectl apply -f k8s/
           
-          # Wait for both deployments
-          wait_for_deployment "weather-api" || exit 1
-          wait_for_deployment "route-planner" || exit 1
+          # Wait for deployments with increased timeout
+          kubectl rollout status deployment/weather-api --timeout=5m
+          kubectl rollout status deployment/route-planner --timeout=5m
 
-      - name: Verify Service Endpoints
+      - name: Verify deployments
         run: |
-          echo "Verifying service endpoints..."
+          # Display pod information
+          echo "Current pods:"
+          kubectl get pods -o wide
           
-          # Get service information
-          echo "Weather API Service:"
-          kubectl get service weather-api-service -o wide
+          # Display service information
+          echo "Service endpoints:"
+          kubectl get services -l app=weatherservice
           
-          echo "Route Planner Service:"
-          kubectl get service route-planner-service -o wide
-          
-          # Get pod logs
-          echo "Weather API logs:"
-          kubectl logs -l app=weatherservice,component=api --tail=50
-          
-          echo "Route Planner logs:"
-          kubectl logs -l app=weatherservice,component=route-planner --tail=50 
+          # Display events that might indicate issues
+          echo "Recent events:"
+          kubectl get events --sort-by='.lastTimestamp' | tail -n 20 

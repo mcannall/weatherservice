@@ -145,7 +145,6 @@ jobs:
         push: true
         platforms: linux/amd64,linux/arm64
         tags: |
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.bump_version.outputs.new_version || steps.get_version.outputs.current_version }}
           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ steps.bump_version.outputs.new_version || steps.get_version.outputs.current_version }}
           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -155,7 +154,7 @@ jobs:
     - name: Test API endpoints
       run: |
         echo "Starting container..."
-        docker run -d -p 80:80 --name weather-api ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        docker run -d -p 80:80 --name weather-api ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
         
         echo "Container started. Checking container status..."
         docker ps
@@ -244,7 +243,6 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}/route-weather-planner:latest
             ghcr.io/${{ github.repository }}/route-weather-planner:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -279,7 +277,7 @@ jobs:
             -e SKIP_API_VALIDATION=true \
             -e DEBUG_MODE=true \
             --name route-weather-planner \
-            ghcr.io/${{ github.repository }}/route-weather-planner:latest
+            ghcr.io/${{ github.repository }}/route-weather-planner:${{ github.sha }}
           
           echo "Container started. Checking container status..."
           docker ps

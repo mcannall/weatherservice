@@ -9,6 +9,7 @@ on:
     branches: [ main ]
     paths:
       - 'route-weather-planner/**'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -46,13 +47,16 @@ jobs:
         with:
           context: ./route-weather-planner
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           labels: ${{ steps.meta.outputs.labels }}
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     environment: production
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout repository
@@ -113,7 +117,7 @@ jobs:
             --name route-weather-planner \
             --env GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
             --env API_URL=http://localhost:80 \
-            ghcr.io/${{ github.repository }}/route-weather-planner:sha-${{ steps.sha.outputs.SHORT_SHA }} \
+            ghcr.io/${{ github.repository }}/route-weather-planner:${{ github.sha }} \
             --workers=4 --bind=0.0.0.0:5000 --access-logfile=- --error-logfile=- --log-level=info --preload wsgi:app
           
           echo "Container started. Checking container status..."
