@@ -24,7 +24,7 @@ spec:
       - name: ghcr-secret
       containers:
       - name: api
-        image: ghcr.io/mcannall/weatherservice:${GITHUB_SHA}
+        image: ghcr.io/mcannall/weatherservice:local-demo
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
@@ -63,7 +63,7 @@ spec:
       - name: ghcr-secret
       containers:
       - name: route-planner
-        image: ghcr.io/mcannall/weatherservice/route-weather-planner:${GITHUB_SHA}
+        image: ghcr.io/mcannall/weatherservice/route-weather-planner:local-demo
         imagePullPolicy: IfNotPresent
         command:
         - gunicorn

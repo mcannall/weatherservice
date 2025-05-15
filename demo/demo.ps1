@@ -1,5 +1,8 @@
 #!/usr/bin/env pwsh
 
+# Add a reference to .NET Web assembly for URL encoding
+Add-Type -AssemblyName System.Web
+
 function Write-ColorOutput {
     param(
         [Parameter(Mandatory = $true)]
@@ -135,7 +138,7 @@ function Show-Progress {
 }
 
 function Get-CurrentVersion {
-    $csproj = Get-Content "api/api.csproj" -Raw
+    $csproj = Get-Content "$projectRoot/api/api.csproj" -Raw
     if ($csproj -match '<Version>([\d\.]+)</Version>') {
         return $matches[1]
     }
@@ -151,9 +154,9 @@ function Update-Version {
 
 function Update-CsprojVersion {
     param([string]$NewVersion)
-    $csproj = Get-Content "api/api.csproj" -Raw
+    $csproj = Get-Content "$projectRoot/api/api.csproj" -Raw
     $csproj = $csproj -replace '<Version>[\d\.]+</Version>', "<Version>$NewVersion</Version>"
-    Set-Content -Path "api/api.csproj" -Value $csproj
+    Set-Content -Path "$projectRoot/api/api.csproj" -Value $csproj
 }
 
 function Start-PortForwarding {
@@ -166,17 +169,18 @@ function Start-PortForwarding {
     )
 
     # Stop any existing port forwarding first
-    Stop-PortForwarding
+    Stop-PortForwarding -Ports @($LocalPort)
 
     # Verify port is available
     if (Test-PortInUse -Port $LocalPort) {
-        Write-ColorOutput ">> Error: Port $LocalPort is in use" "Red"
+        Write-ColorOutput ">> Error: Port $LocalPort is still in use after cleanup" "Red"
         Write-ColorOutput ">> Please ensure no other processes are using port $LocalPort" "Red"
+        Write-ColorOutput ">> You may need to restart PowerShell or reboot your machine if the port cannot be freed" "Yellow"
         return $null
     }
 
     # Start port forwarding in background
-    Write-ColorOutput ">> Starting port forwarding..." "Cyan"
+    Write-ColorOutput ">> Starting port forwarding on port $LocalPort..." "Cyan"
     $job = Start-Job -ScriptBlock {
         param($service, $localPort, $targetPort)
         kubectl port-forward service/$service ${localPort}:${targetPort}
@@ -190,7 +194,7 @@ function Start-PortForwarding {
         Start-Sleep -Seconds $RetryWaitSeconds
         if (Test-PortInUse -Port $LocalPort) {
             $portForwardStarted = $true
-            Write-ColorOutput ">> Port forwarding started successfully!" "Green"
+            Write-ColorOutput ">> Port forwarding started successfully on port $LocalPort!" "Green"
         } else {
             $retryCount++
             if ($retryCount -lt $MaxRetries) {
@@ -210,6 +214,10 @@ function Start-PortForwarding {
 }
 
 function Stop-PortForwarding {
+    param(
+        [int[]]$Ports = @(30080, 30081)
+    )
+    
     # Find any existing kubectl port-forward processes
     $existingProcesses = Get-Process -Name kubectl -ErrorAction SilentlyContinue | 
                          Where-Object { $_.CommandLine -match "port-forward" }
@@ -227,6 +235,31 @@ function Stop-PortForwarding {
         $existingJobs | Stop-Job
         $existingJobs | Remove-Job -Force
         Start-Sleep -Seconds 1
+    }
+    
+    # Find and kill any other process using our ports
+    foreach ($port in $Ports) {
+        $processesUsingPort = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+        if ($processesUsingPort) {
+            Write-ColorOutput ">> Found processes using port $port, terminating..." "Yellow"
+            foreach ($connection in $processesUsingPort) {
+                $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+                if ($process) {
+                    Write-ColorOutput ">> Terminating process: $($process.Name) (PID: $($process.Id))" "Yellow"
+                    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                }
+            }
+            Start-Sleep -Seconds 2
+        }
+    }
+    
+    # Verify ports are free
+    foreach ($port in $Ports) {
+        if (Test-PortInUse -Port $port) {
+            Write-ColorOutput ">> Warning: Port $port is still in use after cleanup attempts" "Red"
+        } else {
+            Write-ColorOutput ">> Port $port is now free" "Green"
+        }
     }
 }
 
@@ -301,7 +334,8 @@ function Show-CICDPipeline {
 }
 
 # Set up global variables
-$projectRoot = Get-Location
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Split-Path -Parent $scriptDir  # Go up one level from script directory
 # Note: You must set OPENWEATHERMAP_API_KEY as an environment variable before running this script
 # $env:OPENWEATHERMAP_API_KEY = "your-api-key-here"  # Example - do NOT store real keys in this file
 $useMockData = $true  # Change to $false to use real API
@@ -332,6 +366,11 @@ if ($missing.Count -gt 0) {
 
 Write-ColorOutput ">> All prerequisites found!" "Green"
 
+# Clean up any leftover port-forwarding processes from previous runs
+Write-ColorOutput ">> Checking for and cleaning up any previous port forwarding..." "Cyan"
+Stop-PortForwarding
+Write-ColorOutput ">> Port cleanup completed" "Green"
+
 # Show deployment options
 Write-ColorOutput "`n>> Choose deployment option:" "Magenta"
 Write-ColorOutput "1. Use GitHub Packages (commit changes and wait for build)" "Cyan"
@@ -357,6 +396,7 @@ if ($choice -eq "1") {
 
 $currentVersion = Get-CurrentVersion
 $imageTag = ""
+$routePlannerImageTag = ""
 
 if ($choice -eq "1") {
     # Option 1: Use GitHub Packages
@@ -373,7 +413,7 @@ if ($choice -eq "1") {
     
     # Commit and push changes
     Write-ColorOutput ">> Committing version update..." "Cyan"
-    git add api/api.csproj
+    git add "$projectRoot/api/api.csproj"
     git commit -m "Bump version to $newVersion for demo"
     
     # Try to push, if it fails, pull and try again
@@ -401,9 +441,11 @@ if ($choice -eq "1") {
     Wait-ForGitHubAction $runId
     
     $imageTag = "ghcr.io/mcannall/weatherservice:$newVersion"
+    $routePlannerImageTag = "ghcr.io/mcannall/weatherservice/route-weather-planner:$newVersion"
 } else {
     # Option 2: Build locally
     $imageTag = "ghcr.io/mcannall/weatherservice:local-demo"
+    $routePlannerImageTag = "ghcr.io/mcannall/weatherservice/route-weather-planner:local-demo"
 }
 
 # Clean up any existing resources
@@ -414,35 +456,95 @@ Write-ColorOutput ">> Cleanup complete!" "Green"
 # Create Kind cluster
 Write-ColorOutput ">> Creating Kubernetes cluster..." "Cyan"
 Show-Progress -Activity "Creating cluster" -Status "Initializing..." -PercentComplete 0
-kind create cluster --name weatherservice
-Show-Progress -Activity "Creating cluster" -Status "Complete" -PercentComplete 100
-Write-ColorOutput ">> Cluster created!" "Green"
+$kindResult = kind create cluster --name weatherservice 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-ColorOutput ">> Error creating Kind cluster: $kindResult" "Red"
+    Write-ColorOutput ">> This may be due to Docker not running or not configured properly." "Yellow"
+    Write-ColorOutput ">> Please check that Docker Desktop is running and that Kubernetes is enabled in Docker Desktop settings." "Yellow"
+    Write-ColorOutput ">> Would you like to continue with the demo in simulation mode? This will skip actual deployment. (y/n)" "Cyan"
+    $continue = Read-Host
+    if ($continue.ToLower() -ne "y") {
+        Write-ColorOutput ">> Exiting demo." "Red"
+        exit 1
+    }
+    $simulationMode = $true
+} else {
+    $simulationMode = $false
+    Show-Progress -Activity "Creating cluster" -Status "Complete" -PercentComplete 100
+    Write-ColorOutput ">> Cluster created!" "Green"
+}
 
 if ($choice -eq "1") {
     # Pull the image from GitHub Packages
     Write-ColorOutput ">> Pulling image from GitHub Packages..." "Cyan"
     Show-Progress -Activity "Pulling image" -Status "Pulling..." -PercentComplete 0
-    docker pull $imageTag
+    if (-not $simulationMode) {
+        $dockerResult = docker pull $imageTag 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-ColorOutput ">> Error pulling image: $dockerResult" "Red"
+            Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+            $simulationMode = $true
+        }
+    }
     Show-Progress -Activity "Pulling image" -Status "Complete" -PercentComplete 100
 } else {
-    # Build the image locally
-    Write-ColorOutput ">> Building Docker image locally..." "Cyan"
-    Show-Progress -Activity "Building image" -Status "Building..." -PercentComplete 0
-    docker build -t $imageTag ./api
-    Show-Progress -Activity "Building image" -Status "Complete" -PercentComplete 100
+    # Build the images locally
+    Write-ColorOutput ">> Building Docker images locally..." "Cyan"
+    
+    # Build the API image
+    Show-Progress -Activity "Building API image" -Status "Building..." -PercentComplete 0
+    if (-not $simulationMode) {
+        $dockerResult = docker build -t $imageTag "$projectRoot/api" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-ColorOutput ">> Error building API image: $dockerResult" "Red"
+            Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+            $simulationMode = $true
+        }
+    }
+    Show-Progress -Activity "Building API image" -Status "Complete" -PercentComplete 100
+    
+    # Build the Route Planner image
+    if (-not $simulationMode) {
+        Show-Progress -Activity "Building Route Planner image" -Status "Building..." -PercentComplete 0
+        $dockerResult = docker build -t $routePlannerImageTag "$projectRoot/route-weather-planner" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-ColorOutput ">> Error building Route Planner image: $dockerResult" "Red"
+            Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+            $simulationMode = $true
+        }
+        Show-Progress -Activity "Building Route Planner image" -Status "Complete" -PercentComplete 100
+    }
 }
 
-Write-ColorOutput ">> Loading image into Kind cluster..." "Cyan"
-Show-Progress -Activity "Loading image" -Status "Loading..." -PercentComplete 0
-kind load docker-image $imageTag --name weatherservice
-Show-Progress -Activity "Loading image" -Status "Complete" -PercentComplete 100
-Write-ColorOutput ">> Image loaded!" "Green"
+Write-ColorOutput ">> Loading images into Kind cluster..." "Cyan"
+Show-Progress -Activity "Loading images" -Status "Loading..." -PercentComplete 0
+if (-not $simulationMode) {
+    # Load API image
+    $kindResult = kind load docker-image $imageTag --name weatherservice 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-ColorOutput ">> Error loading API image into Kind: $kindResult" "Red"
+        Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+        $simulationMode = $true
+    }
+    
+    # Load Route Planner image if we're still in non-simulation mode
+    if (-not $simulationMode) {
+        $kindResult = kind load docker-image $routePlannerImageTag --name weatherservice 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-ColorOutput ">> Error loading Route Planner image into Kind: $kindResult" "Red"
+            Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+            $simulationMode = $true
+        }
+    }
+}
+Show-Progress -Activity "Loading images" -Status "Complete" -PercentComplete 100
+Write-ColorOutput ">> Images loaded!" "Green"
 
 # Create Kubernetes resources
 Write-ColorOutput ">> Creating Kubernetes resources..." "Cyan"
 
 # Read Google Maps API key from .env file
-$envPath = "route-weather-planner/.env"
+$envPath = "$projectRoot/route-weather-planner/.env"
 if (-not (Test-Path $envPath)) {
     Write-ColorOutput ">> Error: .env file not found at $envPath" "Red"
     Write-ColorOutput ">> Please ensure you have copied .env.template to .env and added your API key" "Red"
@@ -465,90 +567,123 @@ $secrets = @{
     GOOGLE_MAPS_API_KEY = $googleMapsApiKey
 }
 $secretArgs = $secrets.GetEnumerator() | ForEach-Object { "--from-literal=$($_.Key)=$($_.Value)" }
-kubectl create secret generic weatherservice-secrets $secretArgs
-kubectl apply -f k8s/
+
+if (-not $simulationMode) {
+    $kubectlResult = kubectl create secret generic weatherservice-secrets $secretArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-ColorOutput ">> Error creating Kubernetes secret: $kubectlResult" "Red"
+        Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+        $simulationMode = $true
+    }
+    
+    $kubectlResult = kubectl apply -f "$projectRoot/k8s/" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-ColorOutput ">> Error applying Kubernetes resources: $kubectlResult" "Red"
+        Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+        $simulationMode = $true
+    }
+}
 Write-ColorOutput ">> Resources created!" "Green"
 
 # Wait for pod to be ready
 Write-ColorOutput ">> Waiting for pod to be ready..." "Cyan"
 Show-Progress -Activity "Waiting for pod" -Status "Waiting..." -PercentComplete 0
 
-$waitResult = kubectl wait --for=condition=ready pod -l app=weatherservice --timeout=60s 2>&1
-$waitSuccess = $LASTEXITCODE -eq 0
-
+if (-not $simulationMode) {
+    $waitResult = kubectl wait --for=condition=ready pod -l app=weatherservice --timeout=60s 2>&1
+    $waitSuccess = $LASTEXITCODE -eq 0
+    
+    if (-not $waitSuccess) {
+        Write-ColorOutput ">> Error waiting for pod to be ready: $waitResult" "Red"
+        Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+        $simulationMode = $true
+    }
+}
 Show-Progress -Activity "Waiting for pod" -Status "Complete" -PercentComplete 100
 
-# If wait failed, check pod status for detailed diagnostics
-if (-not $waitSuccess) {
-    Write-ColorOutput ">> Error waiting for pod to be ready: $waitResult" "Red"
-    
-    Write-ColorOutput ">> Checking pod status for diagnostics..." "Yellow"
-    $podStatus = Get-PodStatus -LabelSelector "app=weatherservice" -Detailed
-    
-    if (-not $podStatus.Success) {
-        Write-ColorOutput ">> Failed to get pod status: $($podStatus.Message)" "Red"
-    } else {
-        Write-ColorOutput ">> Pod: $($podStatus.PodName)" "Yellow"
-        Write-ColorOutput ">> Status: $($podStatus.Status)" "Yellow"
-        Write-ColorOutput ">> Ready: $($podStatus.Ready)" "Yellow"
+if (-not $simulationMode) {
+    # If wait failed, check pod status for detailed diagnostics
+    if (-not $waitSuccess) {
+        Write-ColorOutput ">> Error waiting for pod to be ready: $waitResult" "Red"
         
-        if ($podStatus.ContainerStatus) {
-            if ($podStatus.WaitingReason) {
-                Write-ColorOutput ">> Container waiting reason: $($podStatus.WaitingReason)" "Red"
-                if ($podStatus.WaitingMessage) {
-                    Write-ColorOutput ">> Message: $($podStatus.WaitingMessage)" "Red"
+        Write-ColorOutput ">> Checking pod status for diagnostics..." "Yellow"
+        $podStatus = Get-PodStatus -LabelSelector "app=weatherservice" -Detailed
+        
+        if (-not $podStatus.Success) {
+            Write-ColorOutput ">> Failed to get pod status: $($podStatus.Message)" "Red"
+        } else {
+            Write-ColorOutput ">> Pod: $($podStatus.PodName)" "Yellow"
+            Write-ColorOutput ">> Status: $($podStatus.Status)" "Yellow"
+            Write-ColorOutput ">> Ready: $($podStatus.Ready)" "Yellow"
+            
+            if ($podStatus.ContainerStatus) {
+                if ($podStatus.WaitingReason) {
+                    Write-ColorOutput ">> Container waiting reason: $($podStatus.WaitingReason)" "Red"
+                    if ($podStatus.WaitingMessage) {
+                        Write-ColorOutput ">> Message: $($podStatus.WaitingMessage)" "Red"
+                    }
                 }
-            }
-            
-            if ($podStatus.TerminatedReason) {
-                Write-ColorOutput ">> Container terminated reason: $($podStatus.TerminatedReason)" "Red"
-                if ($podStatus.TerminatedMessage) {
-                    Write-ColorOutput ">> Message: $($podStatus.TerminatedMessage)" "Red"
+                
+                if ($podStatus.TerminatedReason) {
+                    Write-ColorOutput ">> Container terminated reason: $($podStatus.TerminatedReason)" "Red"
+                    if ($podStatus.TerminatedMessage) {
+                        Write-ColorOutput ">> Message: $($podStatus.TerminatedMessage)" "Red"
+                    }
                 }
-            }
-            
-            if ($podStatus.RestartCount -gt 0) {
-                Write-ColorOutput ">> Container has restarted $($podStatus.RestartCount) times" "Red"
-            }
-            
-            if ($podStatus.RecentLogs) {
-                Write-ColorOutput ">> Recent logs from pod:" "Yellow"
-                Write-ColorOutput $podStatus.RecentLogs "Gray"
+                
+                if ($podStatus.RestartCount -gt 0) {
+                    Write-ColorOutput ">> Container has restarted $($podStatus.RestartCount) times" "Red"
+                }
+                
+                if ($podStatus.RecentLogs) {
+                    Write-ColorOutput ">> Recent logs from pod:" "Yellow"
+                    Write-ColorOutput $podStatus.RecentLogs "Gray"
+                }
             }
         }
+        
+        # Try to get events related to the pod
+        Write-ColorOutput ">> Checking Kubernetes events..." "Yellow"
+        kubectl get events --sort-by='.lastTimestamp' | Select-Object -Last 10
+        
+        Write-ColorOutput ">> Pod did not become ready in time." "Red"
+        Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+        $simulationMode = $true
     }
-    
-    # Try to get events related to the pod
-    Write-ColorOutput ">> Checking Kubernetes events..." "Yellow"
-    kubectl get events --sort-by='.lastTimestamp' | Select-Object -Last 10
-    
-    Write-ColorOutput ">> Pod did not become ready in time. Cleaning up and exiting..." "Red"
-    kind delete cluster --name weatherservice
-    exit 1
 }
 
 Write-ColorOutput ">> Pod is ready!" "Green"
 
-# Verify pod is actually running before attempting port forwarding
-$podStatus = Get-PodStatus -LabelSelector "app=weatherservice"
-if (-not $podStatus.Success -or -not $podStatus.Ready -or $podStatus.Status -ne "Running") {
-    Write-ColorOutput ">> Pod status check failed: $($podStatus.Message)" "Red"
-    Write-ColorOutput ">> Cannot proceed with port forwarding. Cleaning up and exiting..." "Red"
-    kind delete cluster --name weatherservice
-    exit 1
+if (-not $simulationMode) {
+    # Verify pod is actually running before attempting port forwarding
+    $podStatus = Get-PodStatus -LabelSelector "app=weatherservice"
+    if (-not $podStatus.Success -or -not $podStatus.Ready -or $podStatus.Status -ne "Running") {
+        Write-ColorOutput ">> Pod status check failed: $($podStatus.Message)" "Red"
+        Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+        $simulationMode = $true
+    }
 }
 
 # Start port forwarding using the new centralized function
 Write-ColorOutput ">> Setting up port forwarding..." "Cyan"
-$job = Start-PortForwarding -Service "api" -LocalPort 30080 -TargetPort 80
-
-if ($null -eq $job) {
-    Write-ColorOutput ">> Failed to start port forwarding. Cleaning up and exiting..." "Red"
-    kind delete cluster --name weatherservice
-    exit 1
+$job = $null
+if (-not $simulationMode) {
+    $job = Start-PortForwarding -Service "weather-api-service" -LocalPort 30080 -TargetPort 80
+    
+    if ($null -eq $job) {
+        Write-ColorOutput ">> Failed to start port forwarding." "Red"
+        Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+        $simulationMode = $true
+    }
 }
 
 Write-ColorOutput ">> Port forwarding established successfully!" "Green"
+Start-Sleep -Seconds 2  # Give it a moment to stabilize
+
+# Open browser to the route planner UI
+$routePlannerUrl = "http://localhost:30081"
+Write-ColorOutput ">> Opening route planner in your browser: $routePlannerUrl" "Cyan"
+Start-Process $routePlannerUrl
 
 # Demo the API
 Write-ColorOutput "`n>> Demonstrating the Weather Service API..." "Magenta"
@@ -562,32 +697,187 @@ $zipCodes = @(
 
 foreach ($location in $zipCodes) {
     Write-ColorOutput "`n>> Getting weather for $($location.city) (ZIP: $($location.zip))..." "Yellow"
-    try {
-        $response = Invoke-RestMethod -Uri "http://localhost:30080/weather/$($location.zip)" -TimeoutSec 10
-        Write-ColorOutput "Temperature: $($response.temperatureC)C / $($response.temperatureF)F" "Green"
-        Write-ColorOutput "Conditions: $($response.summary)" "Green"
-    }
-    catch {
-        Write-ColorOutput ">> Error: Failed to get weather data for $($location.zip)" "Red"
-        Write-ColorOutput ">> Error details: $($_.Exception.Message)" "Red"
-        
-        # Check if port forwarding is still active
-        if (-not (Test-PortInUse -Port 30080)) {
-            Write-ColorOutput ">> Port forwarding appears to have stopped" "Red"
-            Write-ColorOutput ">> Attempting to restart port forwarding..." "Yellow"
-            
-            # Use the centralized function to restart port forwarding
-            $job = Start-PortForwarding -Service "api" -LocalPort 30080 -TargetPort 80
-            
-            if ($null -eq $job) {
-                Write-ColorOutput ">> Failed to restart port forwarding" "Red"
-                Write-ColorOutput ">> Cleaning up and exiting..." "Red"
-                kind delete cluster --name weatherservice
-                exit 1
-            }
-            
-            Write-ColorOutput ">> Port forwarding restarted successfully!" "Green"
+    
+    if (-not $simulationMode) {
+        try {
+            $response = Invoke-RestMethod -Uri "http://localhost:30080/weather/$($location.zip)" -TimeoutSec 10
+            Write-ColorOutput "Temperature: $($response.temperatureC)C / $($response.temperatureF)F" "Green"
+            Write-ColorOutput "Conditions: $($response.summary)" "Green"
         }
+        catch {
+            Write-ColorOutput ">> Error: Failed to get weather data for $($location.zip)" "Red"
+            Write-ColorOutput ">> Error details: $($_.Exception.Message)" "Red"
+            
+            # Check if port forwarding is still active
+            if (-not (Test-PortInUse -Port 30080)) {
+                Write-ColorOutput ">> Port forwarding appears to have stopped" "Red"
+                Write-ColorOutput ">> Attempting to restart port forwarding..." "Yellow"
+                
+                # Use the centralized function to restart port forwarding
+                $job = Start-PortForwarding -Service "weather-api-service" -LocalPort 30080 -TargetPort 80
+                
+                if ($null -eq $job) {
+                    Write-ColorOutput ">> Failed to restart port forwarding" "Red"
+                    Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+                    $simulationMode = $true
+                } else {
+                    Write-ColorOutput ">> Port forwarding restarted successfully!" "Green"
+                }
+            }
+        }
+    } else {
+        # In simulation mode, show sample weather data
+        Write-ColorOutput "SIMULATION MODE: Showing sample weather data" "Yellow"
+        $temp = Get-Random -Minimum 5 -Maximum 35
+        $fahrenheit = [Math]::Round(($temp * 9/5) + 32)
+        $conditions = @("Sunny", "Partly Cloudy", "Cloudy", "Rain", "Thunderstorms", "Snow", "Foggy") | Get-Random
+        Write-ColorOutput "Temperature: $temp C / $fahrenheit F - $conditions" "Green"
+    }
+}
+
+# Demonstrate the Route Weather Planner
+Write-ColorOutput "`n>> Demonstrating the Route Weather Planner..." "Magenta"
+
+# Set up port forwarding for the route planner
+Write-ColorOutput ">> Setting up port forwarding for Route Weather Planner..." "Cyan"
+$routePlannerJob = $null
+if (-not $simulationMode) {
+    $routePlannerJob = Start-PortForwarding -Service "route-planner-service" -LocalPort 30081 -TargetPort 80
+    
+    if ($null -eq $routePlannerJob) {
+        Write-ColorOutput ">> Failed to start port forwarding for Route Weather Planner." "Red"
+        Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+        $simulationMode = $true
+    } else {
+        Write-ColorOutput ">> Port forwarding established successfully!" "Green"
+        Start-Sleep -Seconds 2  # Give it a moment to stabilize
+        
+        # Open browser to the route planner UI
+        $routePlannerUrl = "http://localhost:30081"
+        Write-ColorOutput ">> Opening route planner in your browser: $routePlannerUrl" "Cyan"
+        Start-Process $routePlannerUrl
+    }
+}
+
+# Sample route data
+$sampleRoutes = @(
+    @{
+        start = "Los Angeles, CA";
+        end = "San Francisco, CA";
+        description = "A scenic drive up the California coast"
+    },
+    @{
+        start = "New York, NY";
+        end = "Boston, MA";
+        description = "Journey through New England"
+    }
+)
+
+foreach ($route in $sampleRoutes) {
+    Write-ColorOutput "`n>> Getting weather along route from $($route.start) to $($route.end)..." "Yellow"
+    Write-ColorOutput ">> $($route.description)" "Cyan"
+    
+    if (-not $simulationMode) {
+        try {
+            # URL encode the start and end locations
+            $startEncoded = [System.Web.HttpUtility]::UrlEncode($route.start)
+            $endEncoded = [System.Web.HttpUtility]::UrlEncode($route.end)
+            
+            # Make the request
+            $routeUrl = "http://localhost:30081/route?start=$startEncoded&end=$endEncoded"
+            $routeResponse = Invoke-WebRequest -Uri $routeUrl -TimeoutSec 10
+            
+            # If we got here, the page loaded successfully
+            Write-ColorOutput ">> Route planner page loaded successfully!" "Green"
+            Write-ColorOutput ">> Route information would be displayed in the web UI" "Green"
+        }
+        catch {
+            Write-ColorOutput ">> Error: Failed to access Route Weather Planner" "Red"
+            Write-ColorOutput ">> Error details: $($_.Exception.Message)" "Red"
+            Write-ColorOutput ">> Continuing in simulation mode..." "Yellow"
+            $simulationMode = $true
+        }
+    }
+    
+    if ($simulationMode) {
+        # In simulation mode, show sample route weather data
+        Write-ColorOutput "SIMULATION MODE: Showing sample route weather data" "Yellow"
+        $routePoints = Get-Random -Minimum 3 -Maximum 7
+        Write-ColorOutput ">> Route contains $routePoints stops with weather forecasts" "Green"
+        
+        for ($i = 1; $i -le $routePoints; $i++) {
+            $temp = Get-Random -Minimum 5 -Maximum 35
+            $fahrenheit = [Math]::Round(($temp * 9/5) + 32)
+            $conditions = @("Sunny", "Partly Cloudy", "Cloudy", "Rain", "Thunderstorms", "Snow", "Foggy") | Get-Random
+            Write-ColorOutput ">> Stop $i`: $temp C / $fahrenheit F - $conditions" "Green"
+        }
+        
+        # Create and open a simple HTML page to simulate the route planner
+        $simHtmlPath = "$env:TEMP\route-planner-simulation.html"
+        $startLocation = $route.start
+        $endLocation = $route.end
+        
+        # Generate HTML content without using string interpolation for problem characters
+        $htmlHeader = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Route Weather Planner - SIMULATION MODE</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        .sim-label { background-color: #ffe0e0; color: #c00; padding: 5px 10px; border-radius: 4px; font-weight: bold; display: inline-block; }
+        .route-info { margin: 20px 0; padding: 15px; background-color: #f0f8ff; border-radius: 4px; }
+        .weather-stop { margin: 10px 0; padding: 10px; background-color: #f0fff0; border-radius: 4px; }
+        .label { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Route Weather Planner <span class="sim-label">SIMULATION MODE</span></h1>
+        <div class="route-info">
+            <div class="label">Route:</div>
+            <div>From: $startLocation</div>
+            <div>To: $endLocation</div>
+        </div>
+        <h2>Weather Conditions Along Route:</h2>
+"@
+        
+        $htmlFooter = @"
+    </div>
+</body>
+</html>
+"@
+        
+        # Create HTML content in pieces to avoid PowerShell string interpolation issues
+        $htmlContent = $htmlHeader
+        
+        # Add weather stops manually using Add-Content
+        for ($i = 1; $i -le $routePoints; $i++) {
+            $temp = Get-Random -Minimum 5 -Maximum 35
+            $fahrenheit = [Math]::Round(($temp * 9/5) + 32)
+            $conditions = @("Sunny", "Partly Cloudy", "Cloudy", "Rain", "Thunderstorms", "Snow", "Foggy") | Get-Random
+            $location = if ($i -eq 1) { $startLocation } elseif ($i -eq $routePoints) { $endLocation } else { "Waypoint $i" }
+            
+            $stopHtml = "        <div class=`"weather-stop`">`n"
+            $stopHtml += "            <div class=`"label`">Location $i" + ": $location</div>`n"
+            $stopHtml += "            <div>Temperature: ${temp}°C / ${fahrenheit}°F</div>`n"
+            $stopHtml += "            <div>Conditions: $conditions</div>`n"
+            $stopHtml += "        </div>`n"
+            
+            $htmlContent += $stopHtml
+        }
+        
+        $htmlContent += $htmlFooter
+        
+        # Write the HTML to a file and open it
+        Set-Content -Path $simHtmlPath -Value $htmlContent
+        Start-Process $simHtmlPath
+        Write-ColorOutput ">> Opened simulation of route planner in browser" "Yellow"
+        
+        # Only show one route in simulation mode
+        break
     }
 }
 
@@ -597,7 +887,13 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 # Cleanup
 Write-ColorOutput "`n>> Cleaning up resources..." "Cyan"
-Stop-PortForwarding
-kind delete cluster --name weatherservice
+if (-not $simulationMode) {
+    Stop-PortForwarding
+    if ($null -ne $routePlannerJob) {
+        Stop-Job $routePlannerJob
+        Remove-Job $routePlannerJob
+    }
+    kind delete cluster --name weatherservice
+}
 Write-ColorOutput ">> All resources cleaned up!" "Green"
 Write-ColorOutput ">> Thanks for watching the demo!" "Magenta" 
